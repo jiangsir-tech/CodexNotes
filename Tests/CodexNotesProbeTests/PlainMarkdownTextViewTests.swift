@@ -3180,8 +3180,11 @@ final class PlainMarkdownTextViewTests: XCTestCase {
             minimumComponentWidth: 24
         )
 
-        XCTAssertGreaterThanOrEqual(components.count, 3)
-        let heights = components.map(\.rect.height)
+        // Older AppKit rasterization can also leave a thin horizontal strip
+        // that passes the color/area filter but is not a text-line surface.
+        let lineComponents = components.filter { $0.rect.height >= 12 }
+        XCTAssertGreaterThanOrEqual(lineComponents.count, 3)
+        let heights = lineComponents.map(\.rect.height)
         guard let singleLineHeight = heights.min(), singleLineHeight > 0 else {
             XCTFail("Expected rendered highlight rows")
             return
