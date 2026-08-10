@@ -1,10 +1,13 @@
 import AppKit
 import XCTest
+@testable import CodexNotesCore
 @testable import CodexNotesProbe
 
 @MainActor
 final class CloseButtonHoverHintControllerTests: XCTestCase {
     func testHintAppearsAtExactlyPointThreeSeconds() throws {
+        let restoreLanguage = selectSimplifiedChinese()
+        defer { restoreLanguage() }
         let context = try makeVisibleWindow()
         let scheduler = TestScheduler()
         let presenter = TestPresenter()
@@ -18,6 +21,19 @@ final class CloseButtonHoverHintControllerTests: XCTestCase {
 
         scheduler.advance(by: 0.001)
         XCTAssertEqual(presenter.presentedMessages, ["隐藏 CodexNotes"])
+    }
+
+    private func selectSimplifiedChinese() -> () -> Void {
+        let defaults = UserDefaults.standard
+        let previousValue = defaults.object(forKey: AppLanguagePreference.key)
+        AppLanguagePreference.save(.simplifiedChinese, to: defaults)
+        return {
+            if let previousValue {
+                defaults.set(previousValue, forKey: AppLanguagePreference.key)
+            } else {
+                defaults.removeObject(forKey: AppLanguagePreference.key)
+            }
+        }
     }
 
     func testExitBeforeDelayCancelsPresentation() throws {

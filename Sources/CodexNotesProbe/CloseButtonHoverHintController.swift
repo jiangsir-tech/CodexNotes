@@ -126,13 +126,15 @@ final class CloseButtonHoverHintController: NSResponder {
         fatalError("init(coder:) has not been implemented")
     }
 
-    isolated deinit {
-        scheduledCancellation?()
-        windowVisibilityObservation?.invalidate()
-        if let closeButton, let trackingArea {
-            closeButton.removeTrackingArea(trackingArea)
+    deinit {
+        MainActor.assumeIsolated {
+            scheduledCancellation?()
+            windowVisibilityObservation?.invalidate()
+            if let closeButton, let trackingArea {
+                closeButton.removeTrackingArea(trackingArea)
+            }
+            presenter.dismiss()
         }
-        presenter.dismiss()
     }
 
     /// Attaches to the current standard close button. Repeated calls for the

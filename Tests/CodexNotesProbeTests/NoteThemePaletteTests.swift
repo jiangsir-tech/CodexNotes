@@ -79,6 +79,8 @@ final class NoteThemePaletteTests: XCTestCase {
     }
 
     func testObsidianStationeryKeepsLegacyIDAndApprovedPalette() throws {
+        let restoreLanguage = selectSimplifiedChinese()
+        defer { restoreLanguage() }
         let theme = NoteThemeID.midnightIndigo
         let palette = theme.palette
 
@@ -131,6 +133,8 @@ final class NoteThemePaletteTests: XCTestCase {
     }
 
     func testIvoryCottonPaperKeepsLegacyIDAndApprovedPalette() throws {
+        let restoreLanguage = selectSimplifiedChinese()
+        defer { restoreLanguage() }
         let theme = NoteThemeID.warmPaper
         let palette = theme.palette
 
@@ -175,6 +179,8 @@ final class NoteThemePaletteTests: XCTestCase {
     }
 
     func testSilverTracingPaperKeepsLegacyIDAndApprovedPalette() throws {
+        let restoreLanguage = selectSimplifiedChinese()
+        defer { restoreLanguage() }
         let theme = NoteThemeID.mistPaper
         let palette = theme.palette
 
@@ -234,6 +240,8 @@ final class NoteThemePaletteTests: XCTestCase {
     }
 
     func testNorthSeaCyanotypeKeepsLegacyIDAndApprovedPalette() throws {
+        let restoreLanguage = selectSimplifiedChinese()
+        defer { restoreLanguage() }
         let theme = NoteThemeID.seaSalt
         let palette = theme.palette
 
@@ -297,6 +305,8 @@ final class NoteThemePaletteTests: XCTestCase {
     }
 
     func testMistEucalyptusCottonPaperKeepsLegacyIDAndApprovedPalette() throws {
+        let restoreLanguage = selectSimplifiedChinese()
+        defer { restoreLanguage() }
         let theme = NoteThemeID.sageMist
         let palette = theme.palette
 
@@ -361,6 +371,8 @@ final class NoteThemePaletteTests: XCTestCase {
     }
 
     func testBordeauxCottonPaperKeepsLegacyIDAndApprovedPalette() throws {
+        let restoreLanguage = selectSimplifiedChinese()
+        defer { restoreLanguage() }
         let theme = NoteThemeID.plumNight
         let palette = theme.palette
 
@@ -489,6 +501,19 @@ final class NoteThemePaletteTests: XCTestCase {
         XCTAssertTrue(palette.success.nsColor.isEqual(NSColor.systemGreen))
         XCTAssertTrue(palette.warning.nsColor.isEqual(NSColor.systemOrange))
         XCTAssertTrue(palette.error.nsColor.isEqual(NSColor.systemRed))
+    }
+
+    private func selectSimplifiedChinese() -> () -> Void {
+        let defaults = UserDefaults.standard
+        let previousValue = defaults.object(forKey: AppLanguagePreference.key)
+        AppLanguagePreference.save(.simplifiedChinese, to: defaults)
+        return {
+            if let previousValue {
+                defaults.set(previousValue, forKey: AppLanguagePreference.key)
+            } else {
+                defaults.removeObject(forKey: AppLanguagePreference.key)
+            }
+        }
     }
 
     private func assertContrast(

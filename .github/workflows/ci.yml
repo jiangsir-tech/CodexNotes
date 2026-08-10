@@ -9,12 +9,33 @@ permissions:
 
 jobs:
   test:
-    runs-on: macos-26
+    name: Test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Xcode 15.4
+            os: macos-14
+            developer_directory: /Applications/Xcode_15.4.app/Contents/Developer
+          - name: Current
+            os: macos-26
+            developer_directory: ""
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+
+      - name: Select Xcode
+        if: matrix.developer_directory != ''
+        run: sudo xcode-select --switch "${{ matrix.developer_directory }}"
+
+      - name: Report toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcrun --show-sdk-version
 
       - name: Verify localizations
         run: zsh scripts/verify-localizations.sh

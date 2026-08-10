@@ -125,6 +125,7 @@ final class LoginItemService: ObservableObject {
         subsystem: "tech.jiangsir.codex-task-notes",
         category: "LoginItem"
     )
+    private static let appServiceErrorDomain = "SMAppServiceErrorDomain"
 
     @Published private(set) var status: LoginItemRegistrationStatus
     @Published private(set) var isUpdating = false
@@ -154,8 +155,10 @@ final class LoginItemService: ObservableObject {
         status = backend.status
     }
 
-    isolated deinit {
-        scheduledRefreshCancellation?()
+    deinit {
+        MainActor.assumeIsolated {
+            scheduledRefreshCancellation?()
+        }
     }
 
     var isEnabled: Bool {
@@ -313,13 +316,8 @@ final class LoginItemService: ObservableObject {
         code: Int
     ) -> Bool {
         guard error.code == code else { return false }
-        if error.domain == NSOSStatusErrorDomain {
-            return true
-        }
-        if #available(macOS 15.0, *) {
-            return error.domain == SMAppServiceErrorDomain
-        }
-        return false
+        return error.domain == NSOSStatusErrorDomain
+            || error.domain == Self.appServiceErrorDomain
     }
 
     private static func verificationFailureMessage(

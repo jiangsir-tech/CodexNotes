@@ -187,7 +187,13 @@ final class MainWindowFramePersistenceTests: XCTestCase {
 
     func testConfigureRestoresFallbackLegacyFrameAndMigratesIt() {
         withStandardFrameDefaults { defaults in
-            let legacyFrame = frameString(x: 240, y: 220, width: 520, height: 680)
+            let expectedFrame = testFrame(
+                xOffset: 40,
+                yOffset: 50,
+                width: 520,
+                height: 680
+            )
+            let legacyFrame = descriptor(for: expectedFrame)
             defaults.set(
                 legacyFrame,
                 forKey: legacyFrameKey(modifiedContent: true)
@@ -203,10 +209,7 @@ final class MainWindowFramePersistenceTests: XCTestCase {
             }
 
             XCTAssertEqual(placementCount, 0)
-            assertFrame(
-                window.frame,
-                equals: NSRect(x: 240, y: 220, width: 520, height: 680)
-            )
+            assertFrame(window.frame, equals: expectedFrame)
             XCTAssertNotNil(
                 defaults.string(forKey: MainWindowFramePersistence.autosaveDefaultsKey)
             )

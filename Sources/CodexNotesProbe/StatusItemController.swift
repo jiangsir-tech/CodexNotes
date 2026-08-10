@@ -246,19 +246,21 @@ final class StatusItemController: NSObject {
         observeCloseEducationCommand()
     }
 
-    isolated deinit {
-        closeEducationDismissWorkItem?.cancel()
-        if closeEducationPopover?.isShown == true {
-            closeEducationPopover?.performClose(nil)
+    deinit {
+        MainActor.assumeIsolated {
+            closeEducationDismissWorkItem?.cancel()
+            if closeEducationPopover?.isShown == true {
+                closeEducationPopover?.performClose(nil)
+            }
+            closeEducationPopover = nil
+            if let preferenceObserver {
+                NotificationCenter.default.removeObserver(preferenceObserver)
+            }
+            if let closeEducationObserver {
+                NotificationCenter.default.removeObserver(closeEducationObserver)
+            }
+            NSStatusBar.system.removeStatusItem(statusItem)
         }
-        closeEducationPopover = nil
-        if let preferenceObserver {
-            NotificationCenter.default.removeObserver(preferenceObserver)
-        }
-        if let closeEducationObserver {
-            NotificationCenter.default.removeObserver(closeEducationObserver)
-        }
-        NSStatusBar.system.removeStatusItem(statusItem)
     }
 
     private func configureStatusItem() {

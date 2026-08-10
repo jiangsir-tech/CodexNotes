@@ -239,6 +239,21 @@ final class LoginItemServiceTests: XCTestCase {
         XCTAssertEqual(scheduler.pendingActionCount, 1)
     }
 
+    func testAppServiceErrorDomainIsRecognizedWithoutNewerSDKSymbol() {
+        let backend = StubLoginItemServiceBackend(status: .notRegistered)
+        backend.registerError = serviceManagementError(
+            kSMErrorLaunchDeniedByUser,
+            domain: "SMAppServiceErrorDomain"
+        )
+        let service = LoginItemService(backend: backend)
+
+        let result = service.setEnabled(true)
+
+        XCTAssertEqual(result, .requiresApproval)
+        XCTAssertEqual(service.status, .requiresApproval)
+        XCTAssertNil(service.lastFailure)
+    }
+
     func testJobNotFoundIsTreatedAsAlreadyUnregistered() {
         let backend = StubLoginItemServiceBackend(status: .enabled)
         backend.unregisterError = serviceManagementError(kSMErrorJobNotFound)
@@ -373,6 +388,22 @@ final class LoginItemServiceTests: XCTestCase {
         XCTAssertEqual(scheduler.cancellationCount, 1)
     }
 
+    func testDeinitCancelsThePendingDelayedRefresh() {
+        let backend = StubLoginItemServiceBackend(status: .notRegistered)
+        let scheduler = TestScheduler()
+        var service: LoginItemService? = LoginItemService(
+            backend: backend,
+            scheduler: scheduler.schedule
+        )
+        _ = service?.setEnabled(true)
+        XCTAssertEqual(scheduler.pendingActionCount, 1)
+
+        service = nil
+
+        XCTAssertEqual(scheduler.pendingActionCount, 0)
+        XCTAssertEqual(scheduler.cancellationCount, 1)
+    }
+
     func testExternalRefreshClearsAStaleFailure() {
         let backend = StubLoginItemServiceBackend(status: .notRegistered)
         backend.registerError = StubError.register
@@ -396,13 +427,10 @@ final class LoginItemServiceTests: XCTestCase {
         XCTAssertEqual(backend.openSettingsCallCount, 1)
     }
 
-    private func serviceManagementError(_ code: Int) -> NSError {
-        let domain: String
-        if #available(macOS 15.0, *) {
-            domain = SMAppServiceErrorDomain
-        } else {
-            domain = NSOSStatusErrorDomain
-        }
+    private func serviceManagementError(
+        _ code: Int,
+        domain: String = NSOSStatusErrorDomain
+    ) -> NSError {
         return NSError(
             domain: domain,
             code: code,
