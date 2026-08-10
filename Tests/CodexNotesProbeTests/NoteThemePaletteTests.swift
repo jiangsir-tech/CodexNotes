@@ -567,15 +567,16 @@ final class NoteThemePaletteTests: XCTestCase {
 
     private func relativeLuminance(_ color: NSColor) throws -> Double {
         let srgb = try XCTUnwrap(color.usingColorSpace(.sRGB))
-        let components = [srgb.redComponent, srgb.greenComponent, srgb.blueComponent]
-            .map(Double.init)
-            .map { component in
-                component <= 0.04045
-                    ? component / 12.92
-                    : pow((component + 0.055) / 1.055, 2.4)
-            }
-        return 0.2126 * components[0]
-            + 0.7152 * components[1]
-            + 0.0722 * components[2]
+        let red = linearized(Double(srgb.redComponent))
+        let green = linearized(Double(srgb.greenComponent))
+        let blue = linearized(Double(srgb.blueComponent))
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+    }
+
+    private func linearized(_ component: Double) -> Double {
+        if component <= 0.04045 {
+            return component / 12.92
+        }
+        return pow((component + 0.055) / 1.055, 2.4)
     }
 }
