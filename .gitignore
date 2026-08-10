@@ -1,0 +1,20 @@
+.build/
+.swiftpm/
+dist/
+tmp/
+.DS_Store
+.buildSystem_debug
+.lock
+CACHEDIR.TAG
+workspace-state.json
+artifacts/
+checkouts/
+repositories/
+
+# Keep only the selected app-icon master needed by scripts/build-app-icon.sh.
+design/*
+!design/app-icon/
+design/app-icon/*
+!design/app-icon/selected/
+design/app-icon/selected/*
+!design/app-icon/selected/CodexNotes-AppIcon-1024.png
