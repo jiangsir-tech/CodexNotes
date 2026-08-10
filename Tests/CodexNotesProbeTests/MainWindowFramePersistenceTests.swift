@@ -218,9 +218,14 @@ final class MainWindowFramePersistenceTests: XCTestCase {
 
     func testConfigureUsesInitialPlacementOnlyOnceAndThenRestoresStableFrame() {
         withStandardFrameDefaults { _ in
-            let initialFrame = NSRect(x: 260, y: 230, width: 510, height: 670)
+            let initialFrame = testFrame(
+                xOffset: 80,
+                yOffset: 70,
+                width: 510,
+                height: 670
+            )
             let window = makeWindow(
-                frame: NSRect(x: 40, y: 60, width: 400, height: 660)
+                frame: testFrame(xOffset: 20, yOffset: 20, height: 660)
             )
             var placementCount = 0
             defer { _ = window.setFrameAutosaveName("") }
@@ -229,10 +234,14 @@ final class MainWindowFramePersistenceTests: XCTestCase {
                 placementCount += 1
                 window.setFrame(initialFrame, display: false)
             }
-            window.setFrame(
-                NSRect(x: 70, y: 80, width: 430, height: 640),
-                display: false
+            let requestedStableFrame = testFrame(
+                xOffset: 50,
+                yOffset: 55,
+                width: 430,
+                height: 640
             )
+            window.setFrame(requestedStableFrame, display: false)
+            let expectedStableFrame = window.frame
             MainWindowFramePersistence.persist(window: window)
 
             MainWindowFramePersistence.configure(window: window) {
@@ -240,10 +249,7 @@ final class MainWindowFramePersistenceTests: XCTestCase {
             }
 
             XCTAssertEqual(placementCount, 1)
-            assertFrame(
-                window.frame,
-                equals: NSRect(x: 70, y: 80, width: 430, height: 640)
-            )
+            assertFrame(window.frame, equals: expectedStableFrame)
         }
     }
 

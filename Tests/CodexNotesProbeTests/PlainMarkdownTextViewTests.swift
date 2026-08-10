@@ -2293,6 +2293,13 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         )
         let move = try XCTUnwrap(harness.textView.visibleSelectionToolbarMoveButton)
 
+        // The toolbar is frame-based. macOS 14 does not necessarily run its
+        // layout pass while this borderless test window remains off screen,
+        // so drive the same pending layout pass explicitly before inspecting
+        // child frames.
+        toolbar.needsLayout = true
+        toolbar.layoutSubtreeIfNeeded()
+
         XCTAssertEqual(toolbar.frame.height, 34)
         XCTAssertGreaterThanOrEqual(toolbar.frame.width, 190)
         XCTAssertLessThanOrEqual(toolbar.frame.width, 205)
@@ -3157,7 +3164,11 @@ final class PlainMarkdownTextViewTests: XCTestCase {
     }
 
     func testHighlightBackgroundSplitsWrappedNestedBoldCJKAndEmojiByVisualLine() {
-        let text = "**==中文🙂高亮内容自动换行测试中文🙂高亮内容自动换行测试==**"
+        // Keep an emoji fallback glyph in the wrapped content, but avoid a
+        // yellow emoji: older macOS emoji artwork for 🙂 is detected by this
+        // raster probe as part of the yellow highlight and inflates one
+        // component even though the highlight geometry itself is unchanged.
+        let text = "**==中文💙高亮内容自动换行测试中文💙高亮内容自动换行测试==**"
         let components = renderedHighlightComponents(
             text: text,
             textWidth: 150,
