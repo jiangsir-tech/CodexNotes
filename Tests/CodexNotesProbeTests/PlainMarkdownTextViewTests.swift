@@ -1964,7 +1964,9 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         XCTAssertNil(menu?.item(withTitle: configuration.title))
 
         harness.textView.setSelectedRange((text as NSString).range(of: "选中"))
-        runMainLoop()
+        for _ in 0..<25 where harness.textView.visibleSelectionMovePill == nil {
+            runMainLoop(for: 0.02)
+        }
         XCTAssertNotNil(harness.textView.visibleSelectionMovePill)
         let selectedTextMenu = try XCTUnwrap(
             harness.textView.menu(for: try rightMouseEvent(in: harness.window))
