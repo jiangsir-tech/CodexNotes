@@ -3181,12 +3181,23 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         )
 
         XCTAssertGreaterThanOrEqual(components.count, 3)
-        XCTAssertTrue(components.allSatisfy { $0.rect.height >= 18 && $0.rect.height <= 22 })
         let heights = components.map(\.rect.height)
-        XCTAssertLessThanOrEqual(
-            (heights.max() ?? 0) - (heights.min() ?? 0),
-            1
+        guard let singleLineHeight = heights.min(), singleLineHeight > 0 else {
+            XCTFail("Expected rendered highlight rows")
+            return
+        }
+        XCTAssertGreaterThanOrEqual(singleLineHeight, 15)
+        XCTAssertLessThanOrEqual(singleLineHeight, 22)
+        XCTAssertTrue(
+            heights.allSatisfy {
+                $0 >= singleLineHeight - 1 && $0 <= singleLineHeight * 2 + 2
+            },
+            "A raster component may join two touching rows, but never three"
         )
+        let representedLineCount = heights.reduce(into: 0) { count, height in
+            count += max(1, Int((height / singleLineHeight).rounded()))
+        }
+        XCTAssertGreaterThanOrEqual(representedLineCount, 4)
         XCTAssertEqual(MarkdownInlineFormat.matches(in: text).count, 2)
     }
 

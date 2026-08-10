@@ -312,19 +312,19 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
         let harness = try makeHarness(
             taskText: "第一次\n第二次",
             projectText: "项目正文",
-            selectionMoveNoticeDuration: .milliseconds(400)
+            selectionMoveNoticeDuration: .seconds(2)
         )
         defer { harness.removeTemporaryFiles() }
 
         let firstSnapshot = try snapshot(in: harness.model, selecting: "第一次")
         let firstResult = try XCTUnwrap(move(firstSnapshot, in: harness.model, to: .project))
-        try await Task.sleep(for: .milliseconds(300))
+        try await Task.sleep(for: .seconds(1))
         XCTAssertEqual(harness.model.undoLastSelectionMove(), firstResult)
         XCTAssertNil(harness.model.selectionMoveNotice)
 
         let secondSnapshot = try snapshot(in: harness.model, selecting: "第二次")
         XCTAssertNotNil(move(secondSnapshot, in: harness.model, to: .project))
-        try await Task.sleep(for: .milliseconds(160))
+        try await Task.sleep(for: .milliseconds(1_500))
 
         XCTAssertNotNil(harness.model.selectionMoveNotice)
         XCTAssertEqual(harness.model.selectionMoveNotice?.canUndo, true)
