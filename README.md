@@ -70,7 +70,7 @@ CodexNotes 不上传笔记、不提供云同步，也不包含遥测或分析服
 
 ## 从源码构建
 
-需要 Xcode 15.3 或更高版本，以及支持 Swift 5.10 的命令行工具。
+需要 Xcode 26 或更高版本。应用的运行下限仍是 macOS 14；较新的 Xcode 用于编译项目采用的 Swift 并发语法和 ServiceManagement API。
 
 ```sh
 test_build_dir="$(mktemp -d /tmp/codexnotes-test.XXXXXX)"
