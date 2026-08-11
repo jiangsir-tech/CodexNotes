@@ -16,12 +16,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Xcode 15.4
+          - name: Xcode 15.4 arm64
             os: macos-14
             developer_directory: /Applications/Xcode_15.4.app/Contents/Developer
-          - name: Current
+            architecture: arm64
+          - name: Current arm64
             os: macos-26
             developer_directory: ""
+            architecture: arm64
+          - name: macOS 15 Intel
+            os: macos-15-intel
+            developer_directory: ""
+            architecture: x86_64
 
     steps:
       - name: Check out repository
@@ -30,6 +36,16 @@ jobs:
       - name: Select Xcode
         if: matrix.developer_directory != ''
         run: sudo xcode-select --switch "${{ matrix.developer_directory }}"
+
+      - name: Verify runner architecture
+        env:
+          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          actual_architecture="$(uname -m)"
+          if [[ "$actual_architecture" != "$EXPECTED_ARCHITECTURE" ]]; then
+            echo "Expected $EXPECTED_ARCHITECTURE runner, got $actual_architecture." >&2
+            exit 1
+          fi
 
       - name: Report toolchain
         run: |
@@ -42,3 +58,77 @@ jobs:
 
       - name: Run tests
         run: COPYFILE_DISABLE=1 swift test
+
+  universal-package:
+    name: Package (Universal)
+    runs-on: macos-14
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Select Xcode 15.4
+        run: sudo xcode-select --switch /Applications/Xcode_15.4.app/Contents/Developer
+
+      - name: Report packaging toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcrun --show-sdk-version
+
+      - name: Package Universal app without release credentials
+        env:
+          CODEX_NOTES_INSTALL_LOCAL: "0"
+          COPYFILE_DISABLE: "1"
+        run: zsh scripts/package-app.sh
+
+      - name: Verify Universal archive and all code slices
+        env:
+          EXTRACT_DIRECTORY: ${{ runner.temp }}/codexnotes-universal
+        run: |
+          mkdir -p "$EXTRACT_DIRECTORY"
+          ditto -x -k dist/CodexNotes.zip "$EXTRACT_DIRECTORY"
+          app_path="$EXTRACT_DIRECTORY/CodexNotes.app"
+          test -d "$app_path"
+          zsh scripts/verify-universal-app.sh "$app_path"
+          codesign \
+            --verify \
+            --deep \
+            --strict \
+            --all-architectures \
+            --verbose=2 \
+            "$app_path"
+
+      - name: Reject an app with one architecture removed
+        env:
+          EXTRACT_DIRECTORY: ${{ runner.temp }}/codexnotes-universal
+          NEGATIVE_DIRECTORY: ${{ runner.temp }}/codexnotes-missing-slice
+        run: |
+          mkdir -p "$NEGATIVE_DIRECTORY"
+          negative_app="$NEGATIVE_DIRECTORY/CodexNotes.app"
+          ditto "$EXTRACT_DIRECTORY/CodexNotes.app" "$negative_app"
+
+          executable="$negative_app/Contents/MacOS/CodexNotesProbe"
+          thin_executable="$NEGATIVE_DIRECTORY/CodexNotesProbe-arm64"
+          lipo "$executable" -remove x86_64 -output "$thin_executable"
+          mv "$thin_executable" "$executable"
+          chmod 755 "$executable"
+          if [[ "$(lipo -archs "$executable")" != "arm64" ]]; then
+            echo "Failed to construct the arm64-only negative fixture." >&2
+            exit 1
+          fi
+
+          codesign --force --deep --sign - "$negative_app"
+          codesign \
+            --verify \
+            --deep \
+            --strict \
+            --all-architectures \
+            --verbose=2 \
+            "$negative_app"
+
+          if zsh scripts/verify-universal-app.sh "$negative_app"; then
+            echo "Universal verifier accepted an app missing x86_64." >&2
+            exit 1
+          fi

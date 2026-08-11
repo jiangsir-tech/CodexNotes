@@ -8,7 +8,8 @@ final class CompanionVisibilityPolicyTests: XCTestCase {
         XCTAssertTrue(
             CompanionVisibilityPolicy.shouldShow(
                 frontmostBundleIdentifier: "com.openai.codex",
-                companionBundleIdentifier: companionBundleIdentifier
+                companionBundleIdentifier: companionBundleIdentifier,
+                isCodexAvailable: true
             )
         )
     }
@@ -17,7 +18,8 @@ final class CompanionVisibilityPolicyTests: XCTestCase {
         XCTAssertTrue(
             CompanionVisibilityPolicy.shouldShow(
                 frontmostBundleIdentifier: companionBundleIdentifier,
-                companionBundleIdentifier: companionBundleIdentifier
+                companionBundleIdentifier: companionBundleIdentifier,
+                isCodexAvailable: true
             )
         )
     }
@@ -26,7 +28,8 @@ final class CompanionVisibilityPolicyTests: XCTestCase {
         XCTAssertFalse(
             CompanionVisibilityPolicy.shouldShow(
                 frontmostBundleIdentifier: "com.google.Chrome",
-                companionBundleIdentifier: companionBundleIdentifier
+                companionBundleIdentifier: companionBundleIdentifier,
+                isCodexAvailable: true
             )
         )
     }
@@ -35,27 +38,28 @@ final class CompanionVisibilityPolicyTests: XCTestCase {
         XCTAssertFalse(
             CompanionVisibilityPolicy.shouldShow(
                 frontmostBundleIdentifier: nil,
-                companionBundleIdentifier: companionBundleIdentifier
+                companionBundleIdentifier: companionBundleIdentifier,
+                isCodexAvailable: true
             )
         )
     }
 
-    func testHidesMainWindowWhileSettingsIsVisible() {
+    func testHidesWhenCodexIsUnavailableEvenIfSettingsIsFrontmost() {
         XCTAssertFalse(
             CompanionVisibilityPolicy.shouldShow(
                 frontmostBundleIdentifier: companionBundleIdentifier,
                 companionBundleIdentifier: companionBundleIdentifier,
-                isSettingsVisible: true
+                isCodexAvailable: false
             )
         )
     }
 
-    func testShowsMainWindowAgainAfterSettingsCloses() {
+    func testSettingsFrontmostDoesNotSuppressAnAvailableCodexCompanion() {
         XCTAssertTrue(
             CompanionVisibilityPolicy.shouldShow(
                 frontmostBundleIdentifier: companionBundleIdentifier,
                 companionBundleIdentifier: companionBundleIdentifier,
-                isSettingsVisible: false
+                isCodexAvailable: true
             )
         )
     }

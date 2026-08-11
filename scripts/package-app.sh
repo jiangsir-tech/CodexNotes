@@ -9,6 +9,7 @@ APP_INFO_PLIST="$PROJECT_ROOT/AppBundle/Info.plist"
 APP_ICON="$PROJECT_ROOT/AppBundle/Resources/CodexNotes.icns"
 APP_ICON_BUILD_SCRIPT="$PROJECT_ROOT/scripts/build-app-icon.sh"
 LOCALIZATION_VERIFY_SCRIPT="$PROJECT_ROOT/scripts/verify-localizations.sh"
+UNIVERSAL_APP_VERIFY_SCRIPT="$PROJECT_ROOT/scripts/verify-universal-app.sh"
 INSTALL_DIRECTORY="${CODEX_NOTES_INSTALL_DIRECTORY:-$HOME/Applications}"
 INSTALL_LOCAL="${CODEX_NOTES_INSTALL_LOCAL:-0}"
 ALLOW_WEAK_LOCAL_IDENTITY="${CODEX_NOTES_ALLOW_WEAK_LOCAL_IDENTITY:-0}"
@@ -35,26 +36,77 @@ if [[ "$ALLOW_WEAK_LOCAL_IDENTITY" == "1" && "$INSTALL_LOCAL" != "1" ]]; then
 fi
 
 STAGING_DIRECTORY="$(mktemp -d "${TMPDIR:-/tmp}/codex-notes-probe.XXXXXX")"
-trap 'rm -rf "$STAGING_DIRECTORY"' EXIT
-BUILD_DIRECTORY="$STAGING_DIRECTORY/build"
+ARM64_BUILD_DIRECTORY="$(mktemp -d /tmp/codex-notes-arm64.XXXXXX)"
+X86_64_BUILD_DIRECTORY="$(mktemp -d /tmp/codex-notes-x86_64.XXXXXX)"
+
+cleanup() {
+    rm -rf \
+        "$STAGING_DIRECTORY" \
+        "$ARM64_BUILD_DIRECTORY" \
+        "$X86_64_BUILD_DIRECTORY"
+}
+trap cleanup EXIT
+
+verify_thin_binary() {
+    local binary_path="$1"
+    local expected_architecture="$2"
+    local actual_architectures
+
+    if [[ ! -f "$binary_path" ]]; then
+        echo "缺少 $expected_architecture 构建产物：$binary_path" >&2
+        exit 1
+    fi
+    actual_architectures="$(/usr/bin/lipo -archs "$binary_path")"
+    if [[ "$actual_architectures" != "$expected_architecture" ]]; then
+        echo \
+            "意外的 $expected_architecture 输入架构：$actual_architectures" \
+            >&2
+        exit 1
+    fi
+}
 
 zsh "$APP_ICON_BUILD_SCRIPT" >/dev/null
 zsh "$LOCALIZATION_VERIFY_SCRIPT"
 
-swift build \
+/usr/bin/xcrun swift build \
     --package-path "$PROJECT_ROOT" \
-    --scratch-path "$BUILD_DIRECTORY" \
+    --scratch-path "$ARM64_BUILD_DIRECTORY" \
     -c release \
+    --arch arm64 \
     --product CodexNotesProbe
-BIN_DIRECTORY="$(swift build \
+ARM64_BIN_DIRECTORY="$(/usr/bin/xcrun swift build \
     --package-path "$PROJECT_ROOT" \
-    --scratch-path "$BUILD_DIRECTORY" \
+    --scratch-path "$ARM64_BUILD_DIRECTORY" \
     -c release \
+    --arch arm64 \
+    --product CodexNotesProbe \
     --show-bin-path)"
+
+/usr/bin/xcrun swift build \
+    --package-path "$PROJECT_ROOT" \
+    --scratch-path "$X86_64_BUILD_DIRECTORY" \
+    -c release \
+    --arch x86_64 \
+    --product CodexNotesProbe
+X86_64_BIN_DIRECTORY="$(/usr/bin/xcrun swift build \
+    --package-path "$PROJECT_ROOT" \
+    --scratch-path "$X86_64_BUILD_DIRECTORY" \
+    -c release \
+    --arch x86_64 \
+    --product CodexNotesProbe \
+    --show-bin-path)"
+
+ARM64_BINARY="$ARM64_BIN_DIRECTORY/CodexNotesProbe"
+X86_64_BINARY="$X86_64_BIN_DIRECTORY/CodexNotesProbe"
+verify_thin_binary "$ARM64_BINARY" arm64
+verify_thin_binary "$X86_64_BINARY" x86_64
 
 STAGED_APP="$STAGING_DIRECTORY/$APP_NAME"
 mkdir -p "$STAGED_APP/Contents/MacOS" "$STAGED_APP/Contents/Resources"
-cp "$BIN_DIRECTORY/CodexNotesProbe" "$STAGED_APP/Contents/MacOS/CodexNotesProbe"
+/usr/bin/lipo -create \
+    "$ARM64_BINARY" \
+    "$X86_64_BINARY" \
+    -output "$STAGED_APP/Contents/MacOS/CodexNotesProbe"
 cp "$APP_INFO_PLIST" "$STAGED_APP/Contents/Info.plist"
 if [[ ! -f "$APP_ICON" ]]; then
     echo "缺少应用图标：$APP_ICON" >&2
@@ -66,12 +118,26 @@ RESOURCE_BUNDLE_NAMES=(
     "CodexNotesProbe_CodexNotesCore.bundle"
 )
 for RESOURCE_BUNDLE_NAME in "${RESOURCE_BUNDLE_NAMES[@]}"; do
-    RESOURCE_BUNDLE="$BIN_DIRECTORY/$RESOURCE_BUNDLE_NAME"
-    if [[ ! -d "$RESOURCE_BUNDLE" ]]; then
-        echo "缺少应用资源包：$RESOURCE_BUNDLE" >&2
+    ARM64_RESOURCE_BUNDLE="$ARM64_BIN_DIRECTORY/$RESOURCE_BUNDLE_NAME"
+    X86_64_RESOURCE_BUNDLE="$X86_64_BIN_DIRECTORY/$RESOURCE_BUNDLE_NAME"
+    if [[ ! -d "$ARM64_RESOURCE_BUNDLE" ]]; then
+        echo "缺少 arm64 应用资源包：$ARM64_RESOURCE_BUNDLE" >&2
         exit 1
     fi
-    ditto "$RESOURCE_BUNDLE" "$STAGED_APP/Contents/Resources/$RESOURCE_BUNDLE_NAME"
+    if [[ ! -d "$X86_64_RESOURCE_BUNDLE" ]]; then
+        echo "缺少 x86_64 应用资源包：$X86_64_RESOURCE_BUNDLE" >&2
+        exit 1
+    fi
+    if ! /usr/bin/diff -qr \
+        "$ARM64_RESOURCE_BUNDLE" \
+        "$X86_64_RESOURCE_BUNDLE"
+    then
+        echo "两种架构生成的资源包不一致：$RESOURCE_BUNDLE_NAME" >&2
+        exit 1
+    fi
+    ditto \
+        "$ARM64_RESOURCE_BUNDLE" \
+        "$STAGED_APP/Contents/Resources/$RESOURCE_BUNDLE_NAME"
 done
 chmod 755 "$STAGED_APP/Contents/MacOS/CodexNotesProbe"
 
@@ -79,7 +145,7 @@ zsh "$LOCALIZATION_VERIFY_SCRIPT" "$STAGED_APP"
 
 xattr -cr "$STAGED_APP" 2>/dev/null || true
 codesign --force --deep --sign - "$STAGED_APP"
-codesign --verify --deep --strict --verbose=2 "$STAGED_APP"
+zsh "$UNIVERSAL_APP_VERIFY_SCRIPT" "$STAGED_APP"
 
 mkdir -p "$OUTPUT_DIRECTORY"
 if [[ -e "$ARCHIVE_PATH" ]]; then
@@ -104,7 +170,7 @@ if [[ "$INSTALL_LOCAL" == "1" ]]; then
             --requirements "$LOCAL_INSTALL_REQUIREMENT" \
             "$INSTALLED_APP"
     fi
-    codesign --verify --deep --strict --verbose=2 "$INSTALLED_APP"
+    zsh "$UNIVERSAL_APP_VERIFY_SCRIPT" "$INSTALLED_APP"
 
     if [[ "$LEGACY_APP" != "$INSTALLED_APP" && -e "$LEGACY_APP" ]]; then
         rm -rf "$LEGACY_APP"

@@ -52,13 +52,45 @@ final class StatusItemControllerTests: XCTestCase {
         )
     }
 
-    func testVisibleSettingsAlwaysSwitchesBackToMainWindow() {
+    func testAutomaticPresentationLeavesAnAlreadyVisibleWindowAlone() {
         XCTAssertEqual(
-            action(
+            MainWindowAutomaticPresentationPolicy.action(
+                shouldShow: true,
+                isApplicationHidden: false,
                 isWindowVisible: true,
-                isSettingsVisible: true
+                isWindowMiniaturized: false
+            ),
+            .none
+        )
+    }
+
+    func testAutomaticPresentationShowsAndHidesOnlyWhenNeeded() {
+        XCTAssertEqual(
+            MainWindowAutomaticPresentationPolicy.action(
+                shouldShow: true,
+                isApplicationHidden: false,
+                isWindowVisible: false,
+                isWindowMiniaturized: false
             ),
             .show
+        )
+        XCTAssertEqual(
+            MainWindowAutomaticPresentationPolicy.action(
+                shouldShow: false,
+                isApplicationHidden: false,
+                isWindowVisible: true,
+                isWindowMiniaturized: false
+            ),
+            .hide
+        )
+        XCTAssertEqual(
+            MainWindowAutomaticPresentationPolicy.action(
+                shouldShow: false,
+                isApplicationHidden: false,
+                isWindowVisible: false,
+                isWindowMiniaturized: false
+            ),
+            .none
         )
     }
 
@@ -67,14 +99,12 @@ final class StatusItemControllerTests: XCTestCase {
         XCTAssertEqual(state.preference, .automatic)
         XCTAssertTrue(
             state.shouldShow(
-                automaticVisibilityAllowed: true,
-                isSettingsVisible: false
+                automaticVisibilityAllowed: true
             )
         )
         XCTAssertFalse(
             state.shouldShow(
-                automaticVisibilityAllowed: false,
-                isSettingsVisible: false
+                automaticVisibilityAllowed: false
             )
         )
 
@@ -82,8 +112,7 @@ final class StatusItemControllerTests: XCTestCase {
         XCTAssertEqual(state.preference, .hidden)
         XCTAssertFalse(
             state.shouldShow(
-                automaticVisibilityAllowed: true,
-                isSettingsVisible: false
+                automaticVisibilityAllowed: true
             )
         )
 
@@ -91,20 +120,12 @@ final class StatusItemControllerTests: XCTestCase {
         XCTAssertEqual(state.preference, .automatic)
         XCTAssertFalse(
             state.shouldShow(
-                automaticVisibilityAllowed: false,
-                isSettingsVisible: false
+                automaticVisibilityAllowed: false
             )
         )
         XCTAssertTrue(
             state.shouldShow(
-                automaticVisibilityAllowed: true,
-                isSettingsVisible: false
-            )
-        )
-        XCTAssertFalse(
-            state.shouldShow(
-                automaticVisibilityAllowed: true,
-                isSettingsVisible: true
+                automaticVisibilityAllowed: true
             )
         )
     }
@@ -120,8 +141,7 @@ final class StatusItemControllerTests: XCTestCase {
         XCTAssertTrue(state.isCurrentCodexActivationRequest(requestID))
         XCTAssertFalse(
             state.shouldShow(
-                automaticVisibilityAllowed: true,
-                isSettingsVisible: false
+                automaticVisibilityAllowed: true
             )
         )
 
@@ -129,8 +149,7 @@ final class StatusItemControllerTests: XCTestCase {
         XCTAssertFalse(state.isAwaitingCodexActivation)
         XCTAssertTrue(
             state.shouldShow(
-                automaticVisibilityAllowed: true,
-                isSettingsVisible: false
+                automaticVisibilityAllowed: true
             )
         )
     }
@@ -378,14 +397,12 @@ final class StatusItemControllerTests: XCTestCase {
     private func action(
         isApplicationHidden: Bool = false,
         isWindowVisible: Bool,
-        isWindowMiniaturized: Bool = false,
-        isSettingsVisible: Bool = false
+        isWindowMiniaturized: Bool = false
     ) -> MainWindowToggleAction {
         MainWindowTogglePolicy.action(
             isApplicationHidden: isApplicationHidden,
             isWindowVisible: isWindowVisible,
-            isWindowMiniaturized: isWindowMiniaturized,
-            isSettingsVisible: isSettingsVisible
+            isWindowMiniaturized: isWindowMiniaturized
         )
     }
 }

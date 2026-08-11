@@ -85,8 +85,8 @@ struct CodexNotesProbeApp: App {
                 }
         }
         .defaultSize(
-            width: MainWindowInitialPlacementPolicy.fallbackSize.width,
-            height: MainWindowInitialPlacementPolicy.fallbackSize.height
+            width: MainWindowInitialPlacementPolicy.swiftUIBootstrapSize.width,
+            height: MainWindowInitialPlacementPolicy.swiftUIBootstrapSize.height
         )
         .windowResizability(.contentMinSize)
         .commands {

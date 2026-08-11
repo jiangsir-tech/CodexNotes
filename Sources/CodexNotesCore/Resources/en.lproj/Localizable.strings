@@ -217,9 +217,10 @@
 "settings.editor.font_size.accessibility_hint" = "Adjust the font size of note text.";
 "settings.editor.line_spacing" = "Line Spacing";
 "settings.editor.line_spacing.accessibility_hint" = "0 pt uses the font’s default line spacing. Higher values add more space.";
-"settings.editor.preview_text" = "This is how your note text will look.\nThe second line changes with line spacing.\nAdjust it until it feels comfortable to read.";
-"settings.editor.preview.accessibility_label" = "Body Text Preview";
-"settings.editor.window_resize_hint" = "Drag a note window edge to resize. CodexNotes remembers the size.";
+"settings.editor.window_resize_hint" = "Text size and line spacing update the note window live. Drag its edges to resize it; CodexNotes remembers the size.";
+"settings.editor.restore_window_size" = "Restore Default Note Window Size";
+"settings.editor.restore_window_size.accessibility_hint" = "Restores the note window to the default size for the current display while keeping its position when possible. Notes and editor settings are not changed.";
+"settings.editor.window_size_restored" = "Note window restored to its default size";
 "settings.editor.restore_defaults" = "Restore Editor Defaults";
 "settings.editor.restore_defaults.accessibility_label" = "Restore Editor Defaults";
 "settings.editor.restore_defaults.accessibility_hint" = "Restore the 15 pt body text size and 4 pt line spacing.";

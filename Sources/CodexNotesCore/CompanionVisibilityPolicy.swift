@@ -6,9 +6,9 @@ public enum CompanionVisibilityPolicy {
     public static func shouldShow(
         frontmostBundleIdentifier: String?,
         companionBundleIdentifier: String?,
-        isSettingsVisible: Bool = false
+        isCodexAvailable: Bool
     ) -> Bool {
-        guard !isSettingsVisible else { return false }
+        guard isCodexAvailable else { return false }
         guard let frontmostBundleIdentifier else { return false }
         return frontmostBundleIdentifier == codexBundleIdentifier
             || frontmostBundleIdentifier == companionBundleIdentifier

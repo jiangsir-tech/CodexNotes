@@ -8,22 +8,23 @@ CodexNotes 是一个跟随 Codex 当前任务自动切换的原生 macOS Markdow
 
 ## 系统要求
 
-- Apple Silicon Mac（arm64）
+- Apple Silicon（arm64）或 Intel（x86_64）Mac
 - macOS 14.0 或更高版本
+- 正式 Release 为 Universal 2，同一份应用同时包含 arm64 与 x86_64
 - 当前已验证兼容 Codex `26.803.41515`
 
 CodexNotes 是非官方第三方工具，与 OpenAI 没有隶属、授权或背书关系。
 
 ## 安装
 
-1. 从 [Releases](https://github.com/jiangsir-tech/CodexNotes/releases/latest) 下载最新版 ZIP。
+1. 从 [Releases](https://github.com/jiangsir-tech/CodexNotes/releases/latest) 下载 `CodexNotes-v<版本号>-macOS-universal.zip`；同一份 Universal 2 文件适用于 Apple Silicon 与 Intel Mac。
 2. 解压后，把 `CodexNotes.app` 移到 `/Applications` 或 `~/Applications`。
 3. 首次打开后，CodexNotes 会常驻菜单栏，不会在 Dock 显示图标。
 
 正式 Release 使用 Developer ID 签名并通过 Apple notarization。你可以在终端验证：
 
 ```sh
-codesign --verify --deep --strict --verbose=2 /Applications/CodexNotes.app
+codesign --verify --deep --strict --all-architectures --verbose=2 /Applications/CodexNotes.app
 spctl --assess --type exec --verbose=4 /Applications/CodexNotes.app
 ```
 
@@ -84,7 +85,7 @@ zsh scripts/verify-localizations.sh
 zsh scripts/package-app.sh
 ```
 
-`package-app.sh` 默认只在 `dist/` 生成本地 ad-hoc 构建，不会覆盖已安装应用。开发者如需安装本地构建，必须显式执行：
+`package-app.sh` 默认只在 `dist/` 生成 Universal 2 的本地 ad-hoc 构建，不会覆盖已安装应用。开发者如需安装本地构建，必须显式执行：
 
 ```sh
 CODEX_NOTES_INSTALL_LOCAL=1 \
@@ -103,6 +104,8 @@ zsh scripts/release-notarized.sh
 ## 兼容性说明
 
 自动跟随目前依赖 Codex `26.803.41515` 写出的本机主窗口导航日志。该日志不是公开稳定接口，因此 Codex 大版本更新后需要重新进行兼容性测试。
+
+Universal 2 产物会验证 arm64 与 x86_64 两个架构。当前 Codex 联动验证以 Apple Silicon 真机为主；Intel 版已包含原生 x86_64 架构代码，完整联动兼容性将在真实 Intel Mac 上持续验证，交叉编译或 Rosetta 启动仅作为补充。
 
 ## 许可证
 

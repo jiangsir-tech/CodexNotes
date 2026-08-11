@@ -20,16 +20,34 @@ enum MainWindowTogglePolicy {
     static func action(
         isApplicationHidden: Bool,
         isWindowVisible: Bool,
-        isWindowMiniaturized: Bool,
-        isSettingsVisible: Bool = false
+        isWindowMiniaturized: Bool
     ) -> MainWindowToggleAction {
-        if isSettingsVisible {
-            return .show
-        }
         if isApplicationHidden || !isWindowVisible || isWindowMiniaturized {
             return .show
         }
         return .hide
+    }
+}
+
+enum MainWindowAutomaticPresentationAction: Equatable {
+    case show
+    case hide
+    case none
+}
+
+enum MainWindowAutomaticPresentationPolicy {
+    static func action(
+        shouldShow: Bool,
+        isApplicationHidden: Bool,
+        isWindowVisible: Bool,
+        isWindowMiniaturized: Bool
+    ) -> MainWindowAutomaticPresentationAction {
+        if shouldShow {
+            return isApplicationHidden || !isWindowVisible || isWindowMiniaturized
+                ? .show
+                : .none
+        }
+        return isWindowVisible || isWindowMiniaturized ? .hide : .none
     }
 }
 
@@ -84,10 +102,9 @@ struct MainWindowVisibilityState {
     }
 
     func shouldShow(
-        automaticVisibilityAllowed: Bool,
-        isSettingsVisible: Bool
+        automaticVisibilityAllowed: Bool
     ) -> Bool {
-        guard !isSettingsVisible, !isAwaitingCodexActivation else {
+        guard !isAwaitingCodexActivation else {
             return false
         }
         switch preference {
@@ -120,6 +137,12 @@ enum StatusItemInteractionPolicy {
 enum MainWindowCommandNotification {
     static let toggle = Notification.Name("CodexNotesToggleMainWindow")
     static let show = Notification.Name("CodexNotesShowMainWindow")
+    static let restoreDefaultSize = Notification.Name(
+        "CodexNotesRestoreDefaultMainWindowSize"
+    )
+    static let didRestoreDefaultSize = Notification.Name(
+        "CodexNotesDidRestoreDefaultMainWindowSize"
+    )
     static let hiddenUsingCloseButton = Notification.Name(
         "CodexNotesMainWindowHiddenUsingCloseButton"
     )

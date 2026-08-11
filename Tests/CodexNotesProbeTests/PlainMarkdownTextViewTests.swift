@@ -2004,7 +2004,10 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         )
         harness.textView.selectionMovePresentationDelay = 0
         harness.textView.setSelectedRange(range)
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
 
         let snapshot = try XCTUnwrap(harness.controller.currentSelectionSnapshot())
         let toolbar = try XCTUnwrap(harness.textView.visibleSelectionToolbar)
@@ -2048,7 +2051,10 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         )
         harness.textView.selectionMovePresentationDelay = 0
         harness.textView.setSelectedRange(firstRange)
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
         let staleSelectionPill = try XCTUnwrap(
             harness.textView.visibleSelectionMovePill
         )
@@ -2058,7 +2064,10 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         staleSelectionPill.performClick(nil)
         XCTAssertEqual(moveCount, 0)
         harness.textView.selectionDidChangeForMovePill()
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
         let staleIdentityPill = try XCTUnwrap(
             harness.textView.visibleSelectionMovePill
         )
@@ -2077,7 +2086,10 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         harness.textView.selectionMoveConfiguration = enabledConfiguration
         harness.textView.setSelectedRange(firstRange)
         harness.textView.selectionDidChangeForMovePill()
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
         let staleDestinationPill = try XCTUnwrap(
             harness.textView.visibleSelectionMovePill
         )
@@ -2124,7 +2136,10 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         )
         harness.textView.selectionMovePresentationDelay = 0
         harness.textView.setSelectedRange((original as NSString).range(of: "正文"))
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
         XCTAssertNotNil(harness.textView.visibleSelectionToolbar)
         XCTAssertFalse(
             try XCTUnwrap(harness.textView.visibleSelectionMovePill).isEnabled
@@ -2141,14 +2156,20 @@ final class PlainMarkdownTextViewTests: XCTestCase {
 
         harness.textView.selectionMoveConfiguration = enabledConfiguration
         harness.textView.selectionDidChangeForMovePill()
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
         XCTAssertNotNil(harness.textView.visibleSelectionMovePill)
         harness.textView.isEditable = false
         XCTAssertNil(harness.textView.visibleSelectionMovePill)
 
         harness.textView.isEditable = true
         harness.textView.selectionDidChangeForMovePill()
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
         XCTAssertNotNil(harness.textView.visibleSelectionMovePill)
         harness.textView.insertText(
             "字",
@@ -2159,7 +2180,10 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         let replacementRange = (harness.textView.string as NSString).range(of: "正文")
         harness.textView.setSelectedRange(replacementRange)
         harness.textView.selectionDidChangeForMovePill()
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
         XCTAssertNotNil(harness.textView.visibleSelectionMovePill)
         harness.textView.setMarkedText(
             "zhengwen",
@@ -2193,13 +2217,19 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         harness.textView.selectionMovePresentationDelay = 0
 
         harness.textView.setSelectedRange(range)
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
         XCTAssertNotNil(harness.textView.visibleSelectionMovePill)
         harness.textView.cancelOperation(nil)
         XCTAssertNil(harness.textView.visibleSelectionMovePill)
 
         harness.textView.selectionDidChangeForMovePill()
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
         XCTAssertNotNil(harness.textView.visibleSelectionMovePill)
         harness.scrollView.contentView.scroll(to: NSPoint(x: 0, y: 40))
         harness.scrollView.reflectScrolledClipView(harness.scrollView.contentView)
@@ -2208,7 +2238,10 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         harness.scrollView.contentView.scroll(to: .zero)
         harness.scrollView.reflectScrolledClipView(harness.scrollView.contentView)
         harness.textView.selectionDidChangeForMovePill()
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
         XCTAssertNotNil(harness.textView.visibleSelectionMovePill)
         harness.coordinator.isApplyingExternalText = true
         harness.textView.setSelectedRange(
@@ -2220,7 +2253,10 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         XCTAssertNil(harness.textView.visibleSelectionMovePill)
 
         harness.textView.setSelectedRange(range)
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
         XCTAssertNotNil(harness.textView.visibleSelectionMovePill)
         NotificationCenter.default.post(
             name: NSWindow.didResignKeyNotification,
@@ -2240,7 +2276,10 @@ final class PlainMarkdownTextViewTests: XCTestCase {
 
         harness.window.reportsKeyWindow = true
         harness.textView.selectionDidChangeForMovePill()
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
         XCTAssertNotNil(harness.textView.visibleSelectionMovePill)
         XCTAssertTrue(harness.window.makeFirstResponder(nil))
         XCTAssertNil(harness.textView.visibleSelectionMovePill)
@@ -2286,7 +2325,10 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         )
         harness.textView.selectionMovePresentationDelay = 0
         harness.textView.setSelectedRange((text as NSString).range(of: "选择正文"))
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
 
         let toolbar = try XCTUnwrap(harness.textView.visibleSelectionToolbar)
         let bold = try XCTUnwrap(harness.textView.visibleSelectionToolbarBoldButton)
@@ -2348,7 +2390,10 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         )
         harness.textView.selectionMovePresentationDelay = 0
         harness.textView.setSelectedRange(selectedRange)
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
 
         let originalToolbar = try XCTUnwrap(
             harness.textView.visibleSelectionToolbar
@@ -2429,7 +2474,7 @@ final class PlainMarkdownTextViewTests: XCTestCase {
                 borderColor: .clear
             )
             harness.textView.setSelectedRange(selection)
-            runMainLoop()
+            assertSelectionToolbarAppears(in: harness.textView)
 
             let toolbar = try XCTUnwrap(harness.textView.visibleSelectionToolbar)
             let bold = try XCTUnwrap(
@@ -2507,7 +2552,7 @@ final class PlainMarkdownTextViewTests: XCTestCase {
                 borderColor: .separatorColor
             )
             harness.textView.setSelectedRange(NSRange(location: 0, length: 2))
-            runMainLoop()
+            assertSelectionToolbarAppears(in: harness.textView)
 
             let toolbar = try XCTUnwrap(harness.textView.visibleSelectionToolbar)
             let surface = try XCTUnwrap(colorComponents(of: toolbar.layer?.backgroundColor))
@@ -2558,7 +2603,7 @@ final class PlainMarkdownTextViewTests: XCTestCase {
             borderColor: borderColor
         )
         harness.textView.setSelectedRange(NSRange(location: 0, length: 2))
-        runMainLoop()
+        assertSelectionToolbarAppears(in: harness.textView)
 
         let toolbar = try XCTUnwrap(harness.textView.visibleSelectionToolbar)
         let surface = try XCTUnwrap(colorComponents(of: toolbar.layer?.backgroundColor))
@@ -2612,7 +2657,10 @@ final class PlainMarkdownTextViewTests: XCTestCase {
                 borderColor: .separatorColor
             )
             harness.textView.setSelectedRange(item.selection)
-            runMainLoop()
+            assertSelectionToolbarAppears(
+                in: harness.textView,
+                includingMoveButton: true
+            )
 
             let bold = try XCTUnwrap(harness.textView.visibleSelectionToolbarBoldButton)
             let highlight = try XCTUnwrap(
@@ -2651,7 +2699,7 @@ final class PlainMarkdownTextViewTests: XCTestCase {
             borderColor: .separatorColor
         )
         harness.textView.setSelectedRange(NSRange(location: 0, length: 2))
-        runMainLoop()
+        assertSelectionToolbarAppears(in: harness.textView)
 
         let toolbar = try XCTUnwrap(harness.textView.visibleSelectionToolbar)
         XCTAssertEqual(toolbar.frame.size, NSSize(width: 64, height: 34))
@@ -2699,7 +2747,7 @@ final class PlainMarkdownTextViewTests: XCTestCase {
             borderColor: .separatorColor
         )
         harness.textView.setSelectedRange(NSRange(location: 0, length: 2))
-        runMainLoop()
+        assertSelectionToolbarAppears(in: harness.textView)
 
         let toolbar = try XCTUnwrap(harness.textView.visibleSelectionToolbar)
         let lightSurface = try XCTUnwrap(
@@ -2743,7 +2791,10 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         )
         harness.textView.selectionMovePresentationDelay = 0
         harness.textView.setSelectedRange((text as NSString).range(of: "选择"))
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
 
         let toolbar = try XCTUnwrap(harness.textView.visibleSelectionToolbar)
         let move = try XCTUnwrap(harness.textView.visibleSelectionToolbarMoveButton)
@@ -2760,7 +2811,7 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         let harness = makeHarness(text: text, textWidth: 360)
         harness.textView.selectionMovePresentationDelay = 0
         harness.textView.setSelectedRange(range)
-        runMainLoop()
+        assertSelectionToolbarAppears(in: harness.textView)
 
         let toolbar = try XCTUnwrap(harness.textView.visibleSelectionToolbar)
         XCTAssertEqual(toolbar.frame.size, NSSize(width: 64, height: 34))
@@ -2775,7 +2826,7 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         let harness = makeHarness(text: original, textWidth: 420)
         harness.textView.selectionMovePresentationDelay = 0
         harness.textView.setSelectedRange(originalRange)
-        runMainLoop()
+        assertSelectionToolbarAppears(in: harness.textView)
 
         try XCTUnwrap(
             harness.textView.visibleSelectionToolbarBoldButton
@@ -2841,7 +2892,7 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         let harness = makeHarness(text: original, textWidth: 360)
         harness.textView.selectionMovePresentationDelay = 0
         harness.textView.setSelectedRange((original as NSString).range(of: "格式"))
-        runMainLoop()
+        assertSelectionToolbarAppears(in: harness.textView)
 
         try XCTUnwrap(
             harness.textView.visibleSelectionToolbarBoldButton
@@ -2909,7 +2960,10 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         harness.textView.setSelectedRange(
             NSRange(location: 0, length: (text as NSString).length)
         )
-        runMainLoop()
+        assertSelectionToolbarAppears(
+            in: harness.textView,
+            includingMoveButton: true
+        )
 
         let bold = try XCTUnwrap(harness.textView.visibleSelectionToolbarBoldButton)
         let highlight = try XCTUnwrap(
@@ -2964,7 +3018,10 @@ final class PlainMarkdownTextViewTests: XCTestCase {
             )
             harness.textView.selectionMovePresentationDelay = 0
             harness.textView.setSelectedRange(item.range)
-            runMainLoop()
+            assertSelectionToolbarAppears(
+                in: harness.textView,
+                includingMoveButton: true
+            )
 
             XCTAssertFalse(
                 try XCTUnwrap(
@@ -5123,7 +5180,7 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         let harness = makeHarness(text: text, textWidth: 360)
         harness.textView.selectionMovePresentationDelay = 0
         harness.textView.setSelectedRange((text as NSString).range(of: "这里"))
-        runMainLoop()
+        assertSelectionToolbarAppears(in: harness.textView)
         let staleBoldButton = try XCTUnwrap(
             harness.textView.visibleSelectionToolbarBoldButton
         )
@@ -6092,6 +6149,24 @@ final class PlainMarkdownTextViewTests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.01))
         }
         return condition()
+    }
+
+    private func assertSelectionToolbarAppears(
+        in textView: CheckboxTextView,
+        includingMoveButton: Bool = false,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            waitUntil {
+                textView.visibleSelectionToolbar != nil
+                    && (!includingMoveButton
+                        || textView.visibleSelectionMovePill != nil)
+            },
+            "Selection toolbar did not appear before the timeout.",
+            file: file,
+            line: line
+        )
     }
 
     private func visibleMarkdownLength(

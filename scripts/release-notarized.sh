@@ -3,14 +3,37 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 INFO_PLIST="$PROJECT_ROOT/AppBundle/Info.plist"
+UNIVERSAL_APP_VERIFIER="$PROJECT_ROOT/scripts/verify-universal-app.sh"
 DIST_DIRECTORY="$PROJECT_ROOT/dist"
 VERSION="$(plutil -extract CFBundleShortVersionString raw -o - "$INFO_PLIST")"
 BUILD="$(plutil -extract CFBundleVersion raw -o - "$INFO_PLIST")"
 SOURCE_ARCHIVE="$DIST_DIRECTORY/CodexNotes.zip"
-FINAL_ARCHIVE="$DIST_DIRECTORY/CodexNotes-v${VERSION}-macOS-arm64.zip"
+FINAL_ARCHIVE="$DIST_DIRECTORY/CodexNotes-v${VERSION}-macOS-universal.zip"
 CHECKSUM_PATH="$FINAL_ARCHIVE.sha256"
 SIGNING_IDENTITY="${CODEX_NOTES_SIGNING_IDENTITY:-}"
 NOTARY_PROFILE="${CODEX_NOTES_NOTARY_PROFILE:-}"
+
+verify_developer_id_runtime() {
+    local app_path="$1"
+    local architecture
+    local signature_details
+
+    codesign --verify --deep --strict --all-architectures --verbose=2 "$app_path"
+    for architecture in arm64 x86_64; do
+        if ! signature_details="$(codesign -d --architecture "$architecture" --verbose=4 "$app_path" 2>&1)"; then
+            echo "无法读取 ${architecture} slice 的签名信息。" >&2
+            return 1
+        fi
+        if ! grep -F "Authority=Developer ID Application:" <<<"$signature_details" >/dev/null; then
+            echo "${architecture} slice 不是 Developer ID Application 签名。" >&2
+            return 1
+        fi
+        if ! grep -F "Runtime Version" <<<"$signature_details" >/dev/null; then
+            echo "${architecture} slice 未启用 Hardened Runtime。" >&2
+            return 1
+        fi
+    done
+}
 
 if [[ -z "$SIGNING_IDENTITY" ]]; then
     echo "缺少 CODEX_NOTES_SIGNING_IDENTITY。" >&2
@@ -18,6 +41,10 @@ if [[ -z "$SIGNING_IDENTITY" ]]; then
 fi
 if [[ -z "$NOTARY_PROFILE" ]]; then
     echo "缺少 CODEX_NOTES_NOTARY_PROFILE。" >&2
+    exit 1
+fi
+if [[ ! -f "$UNIVERSAL_APP_VERIFIER" ]]; then
+    echo "缺少 Universal 2 验证脚本：$UNIVERSAL_APP_VERIFIER" >&2
     exit 1
 fi
 if ! git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -60,18 +87,8 @@ codesign \
     --timestamp \
     --sign "$SIGNING_IDENTITY" \
     "$APP_PATH"
-codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-SIGNATURE_DETAILS="$(codesign -d --verbose=4 "$APP_PATH" 2>&1)"
-if ! grep -F "Runtime Version" <<<"$SIGNATURE_DETAILS" >/dev/null; then
-    echo "签名未启用 Hardened Runtime。" >&2
-    exit 1
-fi
-
-ARCHITECTURES="$(lipo -archs "$APP_PATH/Contents/MacOS/CodexNotesProbe")"
-if [[ "$ARCHITECTURES" != "arm64" ]]; then
-    echo "意外的发布架构：$ARCHITECTURES" >&2
-    exit 1
-fi
+zsh "$UNIVERSAL_APP_VERIFIER" "$APP_PATH"
+verify_developer_id_runtime "$APP_PATH"
 
 NOTARY_ARCHIVE="$STAGING_DIRECTORY/CodexNotes-notary.zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$NOTARY_ARCHIVE"
@@ -99,7 +116,8 @@ ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$FINAL_ARCHIVE"
 VERIFY_DIRECTORY="$STAGING_DIRECTORY/verify"
 ditto -x -k "$FINAL_ARCHIVE" "$VERIFY_DIRECTORY"
 VERIFIED_APP="$VERIFY_DIRECTORY/CodexNotes.app"
-codesign --verify --deep --strict --verbose=2 "$VERIFIED_APP"
+zsh "$UNIVERSAL_APP_VERIFIER" "$VERIFIED_APP"
+verify_developer_id_runtime "$VERIFIED_APP"
 xcrun stapler validate "$VERIFIED_APP"
 spctl --assess --type exec --verbose=4 "$VERIFIED_APP"
 if command -v syspolicy_check >/dev/null 2>&1; then

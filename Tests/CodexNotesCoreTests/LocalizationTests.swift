@@ -151,11 +151,27 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(english.text(.settingsEditorTitle), "Editor")
         XCTAssertEqual(
             chinese.text(.settingsEditorWindowResizeHint),
-            "拖动笔记窗口边缘可调整大小，尺寸会自动记住。"
+            "字号和行距会实时应用到笔记窗口；拖动窗口边缘可调整大小，尺寸会自动记住。"
         )
         XCTAssertEqual(
             english.text(.settingsEditorWindowResizeHint),
-            "Drag a note window edge to resize. CodexNotes remembers the size."
+            "Text size and line spacing update the note window live. Drag its edges to resize it; CodexNotes remembers the size."
+        )
+        XCTAssertEqual(
+            chinese.text(.settingsEditorRestoreWindowSize),
+            "恢复笔记窗口默认大小"
+        )
+        XCTAssertEqual(
+            english.text(.settingsEditorRestoreWindowSize),
+            "Restore Default Note Window Size"
+        )
+        XCTAssertEqual(
+            chinese.text(.settingsEditorWindowSizeRestored),
+            "笔记窗口已恢复默认大小"
+        )
+        XCTAssertEqual(
+            english.text(.settingsEditorWindowSizeRestored),
+            "Note window restored to its default size"
         )
         XCTAssertEqual(chinese.text(.settingsGeneralTitle), "通用")
         XCTAssertEqual(english.text(.settingsGeneralTitle), "General")

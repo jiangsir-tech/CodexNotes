@@ -5,11 +5,11 @@ import XCTest
 final class MainWindowInitialPlacementPolicyTests: XCTestCase {
     func testPreferredSizeAdaptsAcrossLaptopAndExternalDisplays() {
         let cases: [(CGSize, CGSize)] = [
-            (CGSize(width: 1_440, height: 875), CGSize(width: 418, height: 640)),
-            (CGSize(width: 1_512, height: 949), CGSize(width: 438, height: 683)),
-            (CGSize(width: 1_728, height: 1_053), CGSize(width: 501, height: 725)),
-            (CGSize(width: 2_560, height: 1_409), CGSize(width: 548, height: 725)),
-            (CGSize(width: 6_016, height: 3_290), CGSize(width: 548, height: 725)),
+            (CGSize(width: 1_440, height: 875), CGSize(width: 400, height: 600)),
+            (CGSize(width: 1_512, height: 949), CGSize(width: 408, height: 626)),
+            (CGSize(width: 1_728, height: 1_053), CGSize(width: 467, height: 680)),
+            (CGSize(width: 2_560, height: 1_409), CGSize(width: 480, height: 680)),
+            (CGSize(width: 6_016, height: 3_290), CGSize(width: 480, height: 680)),
         ]
 
         for (visibleSize, expected) in cases {
@@ -28,18 +28,22 @@ final class MainWindowInitialPlacementPolicyTests: XCTestCase {
             MainWindowInitialPlacementPolicy.preferredSize(
                 forVisibleFrameSize: nil
             ),
-            NSSize(width: 440, height: 680)
+            NSSize(width: 420, height: 640)
         )
         XCTAssertEqual(
             MainWindowInitialPlacementPolicy.preferredSize(
                 forVisibleFrameSize: .zero
             ),
-            NSSize(width: 440, height: 680)
+            NSSize(width: 420, height: 640)
         )
         XCTAssertEqual(
             MainWindowInitialPlacementPolicy.preferredSize(
                 forVisibleFrameSize: CGSize(width: CGFloat.nan, height: 900)
             ),
+            NSSize(width: 420, height: 640)
+        )
+        XCTAssertEqual(
+            MainWindowInitialPlacementPolicy.swiftUIBootstrapSize,
             NSSize(width: 440, height: 680)
         )
     }
@@ -60,19 +64,19 @@ final class MainWindowInitialPlacementPolicyTests: XCTestCase {
             in: visibleFrame,
             codexFrame: NSRect(x: 100, y: 100, width: 700, height: 700)
         )
-        XCTAssertEqual(right.origin, NSPoint(x: 808, y: 152))
+        XCTAssertEqual(right.origin, NSPoint(x: 808, y: 200))
 
         let left = MainWindowInitialPlacementPolicy.initialFrame(
             in: visibleFrame,
             codexFrame: NSRect(x: 600, y: 100, width: 700, height: 700)
         )
-        XCTAssertEqual(left.origin, NSPoint(x: 174, y: 152))
+        XCTAssertEqual(left.origin, NSPoint(x: 192, y: 200))
 
         let overlap = MainWindowInitialPlacementPolicy.initialFrame(
             in: visibleFrame,
             codexFrame: NSRect(x: 100, y: 100, width: 1_240, height: 700)
         )
-        XCTAssertEqual(overlap.origin, NSPoint(x: 914, y: 152))
+        XCTAssertEqual(overlap.origin, NSPoint(x: 932, y: 200))
         XCTAssertTrue(visibleFrame.contains(overlap))
     }
 
@@ -81,7 +85,49 @@ final class MainWindowInitialPlacementPolicyTests: XCTestCase {
             in: NSRect(x: 200, y: 100, width: 1_440, height: 900),
             codexFrame: nil
         )
-        XCTAssertEqual(frame, NSRect(x: 711, y: 226, width: 418, height: 648))
+        XCTAssertEqual(frame, NSRect(x: 720, y: 250, width: 400, height: 600))
+    }
+
+    func testRestoringDefaultSizePreservesTopLeftAndClampsToVisibleFrame() {
+        let studioDisplay = NSRect(
+            x: 0,
+            y: 0,
+            width: 2_560,
+            height: 1_409
+        )
+        XCTAssertEqual(
+            MainWindowInitialPlacementPolicy.frameByRestoringDefaultSize(
+                from: NSRect(x: 1_975, y: 379, width: 452, height: 638),
+                in: studioDisplay
+            ),
+            NSRect(x: 1_975, y: 337, width: 480, height: 680)
+        )
+
+        XCTAssertEqual(
+            MainWindowInitialPlacementPolicy.frameByRestoringDefaultSize(
+                from: NSRect(x: 1_300, y: 40, width: 200, height: 200),
+                in: NSRect(x: 0, y: 0, width: 1_440, height: 900)
+            ),
+            NSRect(x: 1_040, y: 0, width: 400, height: 600)
+        )
+    }
+
+    func testDefaultSizeSelectsTheVisibleFrameWithTheLargestIntersection() {
+        let left = NSRect(x: -1_920, y: 0, width: 1_920, height: 1_080)
+        let main = NSRect(x: 0, y: 0, width: 1_440, height: 900)
+
+        XCTAssertEqual(
+            MainWindowInitialPlacementPolicy.visibleFrame(
+                containingMostOf: NSRect(
+                    x: -1_000,
+                    y: 100,
+                    width: 1_200,
+                    height: 700
+                ),
+                among: [main, left]
+            ),
+            left
+        )
     }
 
     func testDisplaySelectionUsesLargestQuartzIntersection() {
