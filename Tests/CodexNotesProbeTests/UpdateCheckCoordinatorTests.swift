@@ -71,7 +71,10 @@ final class UpdateCheckCoordinatorTests: XCTestCase {
             fixture.defaults.object(forKey: UpdateCheckPreferenceKey.nextEligibleAt) as? Date,
             referenceDate.addingTimeInterval(10 + 24 * 60 * 60)
         )
-        XCTAssertEqual(scheduler.activeDelays, [24 * 60 * 60])
+        XCTAssertEqual(
+            scheduler.activeDelays,
+            [TimeInterval(24 * 60 * 60)]
+        )
         coordinator.stop()
     }
 
