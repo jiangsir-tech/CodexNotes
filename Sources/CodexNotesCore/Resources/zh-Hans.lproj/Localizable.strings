@@ -217,9 +217,10 @@
 "settings.editor.font_size.accessibility_hint" = "调整笔记正文的字体大小";
 "settings.editor.line_spacing" = "行间距";
 "settings.editor.line_spacing.accessibility_hint" = "0 pt 使用字体默认行距，数值越大行距越宽";
-"settings.editor.preview_text" = "这是笔记正文的显示效果\n第二行会随行间距变化\n调到阅读舒适的位置即可";
-"settings.editor.preview.accessibility_label" = "正文预览";
-"settings.editor.window_resize_hint" = "拖动笔记窗口边缘可调整大小，尺寸会自动记住。";
+"settings.editor.window_resize_hint" = "字号和行距会实时应用到笔记窗口；拖动窗口边缘可调整大小，尺寸会自动记住。";
+"settings.editor.restore_window_size" = "恢复笔记窗口默认大小";
+"settings.editor.restore_window_size.accessibility_hint" = "将笔记窗口恢复为适合当前显示器的默认大小，尽量保留窗口位置，不会更改笔记内容或编辑器设置。";
+"settings.editor.window_size_restored" = "笔记窗口已恢复默认大小";
 "settings.editor.restore_defaults" = "恢复编辑器默认";
 "settings.editor.restore_defaults.accessibility_label" = "恢复编辑器默认设置";
 "settings.editor.restore_defaults.accessibility_hint" = "恢复 15 pt 正文字号和 4 pt 行间距";

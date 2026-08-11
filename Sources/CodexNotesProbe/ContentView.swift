@@ -1955,17 +1955,25 @@ struct WindowConfigurator: NSViewRepresentable {
     final class Coordinator: NSObject, NSWindowDelegate {
         private weak var window: NSWindow?
         private var activationObserver: NSObjectProtocol?
-        private var settingsVisibilityObserver: NSObjectProtocol?
         private var toggleWindowObserver: NSObjectProtocol?
         private var showWindowObserver: NSObjectProtocol?
+        private var restoreDefaultSizeObserver: NSObjectProtocol?
         private var framePersistenceObservers: [NSObjectProtocol] = []
         private weak var originalWindowDelegate: NSWindowDelegate?
         private var visibilityState = MainWindowVisibilityState()
-        private var isSettingsVisible = false
         private var codexActivationTimeoutWorkItem: DispatchWorkItem?
+        private let codexAvailabilityMonitor: CodexApplicationAvailabilityObserving
         private let closeButtonHoverHintController = CloseButtonHoverHintController()
         private var appliedLanguageRevision: String?
         private var isInvalidated = false
+
+        init(
+            codexAvailabilityMonitor: CodexApplicationAvailabilityObserving? = nil
+        ) {
+            self.codexAvailabilityMonitor = codexAvailabilityMonitor
+                ?? CodexApplicationAvailabilityMonitor()
+            super.init()
+        }
 
         func attach(to window: NSWindow, languageRevision: String) {
             guard !isInvalidated,
@@ -1984,6 +1992,9 @@ struct WindowConfigurator: NSViewRepresentable {
             self.window = window
             originalWindowDelegate = window.delegate
             window.delegate = self
+            codexAvailabilityMonitor.start { [weak self] isAvailable in
+                self?.codexAvailabilityDidChange(isAvailable)
+            }
             if activationObserver == nil {
                 activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
                     forName: NSWorkspace.didActivateApplicationNotification,
@@ -1994,20 +2005,6 @@ struct WindowConfigurator: NSViewRepresentable {
                         as? NSRunningApplication
                     MainActor.assumeIsolated {
                         self?.applicationDidActivate(application)
-                    }
-                }
-            }
-            if settingsVisibilityObserver == nil {
-                settingsVisibilityObserver = NotificationCenter.default.addObserver(
-                    forName: SettingsWindowVisibilityNotification.name,
-                    object: nil,
-                    queue: .main
-                ) { [weak self] notification in
-                    guard let isVisible = notification.userInfo?[
-                        SettingsWindowVisibilityNotification.isVisibleKey
-                    ] as? Bool else { return }
-                    MainActor.assumeIsolated {
-                        self?.settingsVisibilityDidChange(isVisible)
                     }
                 }
             }
@@ -2033,6 +2030,17 @@ struct WindowConfigurator: NSViewRepresentable {
                     }
                 }
             }
+            if restoreDefaultSizeObserver == nil {
+                restoreDefaultSizeObserver = NotificationCenter.default.addObserver(
+                    forName: MainWindowCommandNotification.restoreDefaultSize,
+                    object: nil,
+                    queue: .main
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.restoreDefaultWindowSize()
+                    }
+                }
+            }
             installFramePersistenceObservers(for: window)
             appliedLanguageRevision = languageRevision
             refreshCloseButtonHoverHint(for: window)
@@ -2048,14 +2056,11 @@ struct WindowConfigurator: NSViewRepresentable {
         func detach() {
             closeButtonHoverHintController.detach()
             cancelCodexActivationTimeout()
+            codexAvailabilityMonitor.stop()
             if let activationObserver {
                 NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
             }
             activationObserver = nil
-            if let settingsVisibilityObserver {
-                NotificationCenter.default.removeObserver(settingsVisibilityObserver)
-            }
-            settingsVisibilityObserver = nil
             if let toggleWindowObserver {
                 NotificationCenter.default.removeObserver(toggleWindowObserver)
             }
@@ -2064,6 +2069,12 @@ struct WindowConfigurator: NSViewRepresentable {
                 NotificationCenter.default.removeObserver(showWindowObserver)
             }
             showWindowObserver = nil
+            if let restoreDefaultSizeObserver {
+                NotificationCenter.default.removeObserver(
+                    restoreDefaultSizeObserver
+                )
+            }
+            restoreDefaultSizeObserver = nil
             if let window {
                 MainWindowFramePersistence.persistIfVisible(window: window)
             }
@@ -2118,12 +2129,10 @@ struct WindowConfigurator: NSViewRepresentable {
 
         private func toggleFromStatusItem() {
             guard let window else { return }
-            let settingsVisible = visibleSettingsWindow != nil
             let action = MainWindowTogglePolicy.action(
                 isApplicationHidden: NSApp.isHidden,
                 isWindowVisible: window.isVisible,
-                isWindowMiniaturized: window.isMiniaturized,
-                isSettingsVisible: settingsVisible
+                isWindowMiniaturized: window.isMiniaturized
             )
             switch action {
             case .show:
@@ -2138,13 +2147,29 @@ struct WindowConfigurator: NSViewRepresentable {
             presentMainWindow(window)
         }
 
+        private func restoreDefaultWindowSize() {
+            guard let window,
+                  MainWindowFramePersistence.restoreDefaultSize(
+                      window: window
+                  ) else { return }
+            NotificationCenter.default.post(
+                name: MainWindowCommandNotification.didRestoreDefaultSize,
+                object: window
+            )
+        }
+
         private func presentMainWindow(_ window: NSWindow) {
             let frontmostApplication = NSWorkspace.shared.frontmostApplication
-            if frontmostApplication?.bundleIdentifier
-                == CompanionVisibilityPolicy.codexBundleIdentifier {
+            let frontmostBundleIdentifier = frontmostApplication?.bundleIdentifier
+            let companionBundleIdentifier = Bundle.main.bundleIdentifier
+            if codexAvailabilityMonitor.isCodexAvailable,
+               (
+                   frontmostBundleIdentifier
+                       == CompanionVisibilityPolicy.codexBundleIdentifier
+                       || frontmostBundleIdentifier == companionBundleIdentifier
+               ) {
                 cancelCodexActivationTimeout()
                 visibilityState.recordManualShow()
-                closeSettingsWindowIfNeeded()
                 updateVisibility(frontmostApplication: frontmostApplication)
                 return
             }
@@ -2240,7 +2265,6 @@ struct WindowConfigurator: NSViewRepresentable {
             }
             cancelCodexActivationTimeout()
             _ = visibilityState.completeCodexActivation(requestID: requestID)
-            closeSettingsWindowIfNeeded()
             updateVisibility(frontmostApplication: frontmostApplication)
             return true
         }
@@ -2259,7 +2283,6 @@ struct WindowConfigurator: NSViewRepresentable {
                     let frontmostApplication = NSWorkspace.shared.frontmostApplication
                     if frontmostApplication?.bundleIdentifier
                         == CompanionVisibilityPolicy.codexBundleIdentifier {
-                        self.closeSettingsWindowIfNeeded()
                         self.updateVisibility(
                             frontmostApplication: frontmostApplication
                         )
@@ -2282,34 +2305,6 @@ struct WindowConfigurator: NSViewRepresentable {
             codexActivationTimeoutWorkItem = nil
         }
 
-        private func closeSettingsWindowIfNeeded() {
-            visibleSettingsWindow?.performClose(nil)
-            isSettingsVisible = false
-        }
-
-        private var visibleSettingsWindow: NSWindow? {
-            NSApp.windows.first {
-                $0.identifier == CodexNotesWindowIdentifier.settings
-                    && $0.isVisible
-            }
-        }
-
-        private func settingsVisibilityDidChange(_ isVisible: Bool) {
-            isSettingsVisible = isVisible
-            if isVisible {
-                if let window {
-                    orderOutMainWindow(window)
-                }
-            } else {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, !self.isSettingsVisible else { return }
-                    self.updateVisibility(
-                        frontmostApplication: NSWorkspace.shared.frontmostApplication
-                    )
-                }
-            }
-        }
-
         private func applicationDidActivate(
             _ application: NSRunningApplication?
         ) {
@@ -2323,26 +2318,40 @@ struct WindowConfigurator: NSViewRepresentable {
                 }
                 cancelCodexActivationTimeout()
                 _ = visibilityState.completeCodexActivation()
-                closeSettingsWindowIfNeeded()
             }
             updateVisibility(frontmostApplication: application)
         }
 
+        private func codexAvailabilityDidChange(_ isAvailable: Bool) {
+            if !isAvailable, visibilityState.isAwaitingCodexActivation {
+                cancelCodexActivationTimeout()
+                _ = visibilityState.completeCodexActivation()
+            }
+            updateVisibility(
+                frontmostApplication: NSWorkspace.shared.frontmostApplication
+            )
+        }
+
         private func updateVisibility(frontmostApplication: NSRunningApplication?) {
             guard let window else { return }
-            isSettingsVisible = visibleSettingsWindow != nil
             let frontmostBundleIdentifier = frontmostApplication?.bundleIdentifier
             let companionBundleIdentifier = Bundle.main.bundleIdentifier
             let automaticVisibilityAllowed = CompanionVisibilityPolicy.shouldShow(
                 frontmostBundleIdentifier: frontmostBundleIdentifier,
                 companionBundleIdentifier: companionBundleIdentifier,
-                isSettingsVisible: isSettingsVisible
+                isCodexAvailable: codexAvailabilityMonitor.isCodexAvailable
             )
             let shouldShow = visibilityState.shouldShow(
-                automaticVisibilityAllowed: automaticVisibilityAllowed,
-                isSettingsVisible: isSettingsVisible
+                automaticVisibilityAllowed: automaticVisibilityAllowed
             )
-            if shouldShow {
+            let action = MainWindowAutomaticPresentationPolicy.action(
+                shouldShow: shouldShow,
+                isApplicationHidden: NSApp.isHidden,
+                isWindowVisible: window.isVisible,
+                isWindowMiniaturized: window.isMiniaturized
+            )
+            switch action {
+            case .show:
                 if window.isMiniaturized {
                     window.deminiaturize(nil)
                 }
@@ -2350,8 +2359,10 @@ struct WindowConfigurator: NSViewRepresentable {
                     NSApp.unhideWithoutActivation()
                 }
                 MainWindowFramePersistence.showPreservingFrame(window: window)
-            } else {
+            case .hide:
                 orderOutMainWindow(window)
+            case .none:
+                break
             }
         }
 

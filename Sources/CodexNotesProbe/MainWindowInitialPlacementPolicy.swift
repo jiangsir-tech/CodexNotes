@@ -8,13 +8,19 @@ struct MainWindowDisplayGeometry: Equatable {
 }
 
 enum MainWindowInitialPlacementPolicy {
-    static let fallbackSize = NSSize(width: 440, height: 680)
-    static let widthRatio: CGFloat = 0.29
-    static let heightRatio: CGFloat = 0.72
+    // Keep the scene's pre-configuration size stable so existing users do not
+    // briefly see a different frame before their saved window is restored.
+    static let swiftUIBootstrapSize = NSSize(width: 440, height: 680)
+
+    // The compact first-run frame leaves more room for Codex while remaining
+    // comfortably above ContentView's 340 x 520 resizing floor.
+    static let fallbackSize = NSSize(width: 420, height: 640)
+    static let widthRatio: CGFloat = 0.27
+    static let heightRatio: CGFloat = 0.66
     static let minimumWidth: CGFloat = 400
-    static let maximumWidth: CGFloat = 548
-    static let minimumHeight: CGFloat = 640
-    static let maximumHeight: CGFloat = 725
+    static let maximumWidth: CGFloat = 480
+    static let minimumHeight: CGFloat = 600
+    static let maximumHeight: CGFloat = 680
     static let companionGap: CGFloat = 8
 
     static func preferredSize(forVisibleFrameSize visibleSize: CGSize?) -> NSSize {
@@ -81,6 +87,41 @@ enum MainWindowInitialPlacementPolicy {
         let y = (codexFrame.maxY - size.height)
             .clamped(to: visibleFrame.minY...maximumY)
         return NSRect(x: x, y: y, width: size.width, height: size.height)
+    }
+
+    static func frameByRestoringDefaultSize(
+        from currentFrame: NSRect,
+        in visibleFrame: NSRect
+    ) -> NSRect {
+        let size = preferredSize(forVisibleFrameSize: visibleFrame.size)
+        let maximumX = max(visibleFrame.minX, visibleFrame.maxX - size.width)
+        let maximumY = max(visibleFrame.minY, visibleFrame.maxY - size.height)
+        let x = currentFrame.minX.clamped(
+            to: visibleFrame.minX...maximumX
+        )
+        let y = (currentFrame.maxY - size.height).clamped(
+            to: visibleFrame.minY...maximumY
+        )
+        return NSRect(origin: NSPoint(x: x, y: y), size: size)
+    }
+
+    static func visibleFrame(
+        containingMostOf frame: NSRect,
+        among visibleFrames: [NSRect]
+    ) -> NSRect? {
+        visibleFrames
+            .compactMap { visibleFrame -> (frame: NSRect, area: CGFloat)? in
+                let intersection = visibleFrame.intersection(frame)
+                guard !intersection.isNull, !intersection.isEmpty else {
+                    return nil
+                }
+                return (
+                    visibleFrame,
+                    intersection.width * intersection.height
+                )
+            }
+            .max { lhs, rhs in lhs.area < rhs.area }?
+            .frame
     }
 
     static func display(

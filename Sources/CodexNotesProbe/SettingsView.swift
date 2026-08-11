@@ -38,12 +38,24 @@ enum SettingsGeneralPresentation {
     }
 }
 
+enum SettingsWindowLevelPolicy {
+    static let active = NSWindow.Level(
+        rawValue: NSWindow.Level.floating.rawValue + 1
+    )
+}
+
+enum SettingsEditorPresentation {
+    static let controlLabelWidth: CGFloat = 96
+    static let restoreConfirmationDurationNanoseconds: UInt64 = 1_500_000_000
+}
+
 struct SettingsView: View {
     @ObservedObject private var updateCoordinator: UpdateCheckCoordinator
     @ObservedObject private var globalHotKeyController: GlobalHotKeyController
     @Environment(\.colorScheme) private var inheritedColorScheme
     @StateObject private var loginItemService = LoginItemService()
     @State private var globalHotKeyErrorKey: L10n.Key?
+    @State private var windowSizeRestoreConfirmationID: UUID?
     @AppStorage(AppLanguagePreference.key)
     private var storedLanguage = AppLanguagePreference.defaultValue.rawValue
     @AppStorage(EditorFontSizePreference.key)
@@ -172,7 +184,10 @@ struct SettingsView: View {
                     HStack(spacing: 12) {
                         Text(L10n.text(.settingsEditorFontSize))
                             .font(.subheadline.weight(.medium))
-                            .frame(width: 72, alignment: .leading)
+                            .frame(
+                                width: SettingsEditorPresentation.controlLabelWidth,
+                                alignment: .leading
+                            )
 
                         Slider(
                             value: editorFontSize,
@@ -192,7 +207,10 @@ struct SettingsView: View {
                     HStack(spacing: 12) {
                         Text(L10n.text(.settingsEditorLineSpacing))
                             .font(.subheadline.weight(.medium))
-                            .frame(width: 72, alignment: .leading)
+                            .frame(
+                                width: SettingsEditorPresentation.controlLabelWidth,
+                                alignment: .leading
+                            )
 
                         Slider(
                             value: editorLineSpacing,
@@ -208,22 +226,6 @@ struct SettingsView: View {
                             .frame(width: 42, alignment: .trailing)
                             .accessibilityHidden(true)
                     }
-
-                    Text(L10n.text(.settingsEditorPreviewText))
-                        .font(.system(size: editorFontSize.wrappedValue, design: .monospaced))
-                        .lineSpacing(editorLineSpacing.wrappedValue)
-                        .foregroundStyle(palette.primaryText.color)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(
-                            palette.editorBackground.color,
-                            in: RoundedRectangle(cornerRadius: 9)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 9)
-                                .stroke(palette.separator.color, lineWidth: 0.7)
-                        )
-                        .accessibilityLabel(Text(L10n.text(.settingsEditorPreviewAccessibilityLabel)))
 
                     editorFooter
                 }
@@ -335,29 +337,58 @@ struct SettingsView: View {
         ) { _ in
             loginItemService.refresh()
         }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: MainWindowCommandNotification.didRestoreDefaultSize
+            )
+        ) { _ in
+            windowSizeRestoreConfirmationID = UUID()
+            announceForAccessibility(
+                L10n.text(.settingsEditorWindowSizeRestored)
+            )
+        }
+        .task(id: windowSizeRestoreConfirmationID) {
+            guard let confirmationID = windowSizeRestoreConfirmationID else {
+                return
+            }
+            do {
+                try await Task.sleep(
+                    nanoseconds: SettingsEditorPresentation
+                        .restoreConfirmationDurationNanoseconds
+                )
+            } catch {
+                return
+            }
+            guard confirmationID == windowSizeRestoreConfirmationID else {
+                return
+            }
+            windowSizeRestoreConfirmationID = nil
+        }
+        .onDisappear {
+            windowSizeRestoreConfirmationID = nil
+        }
     }
 
     @ViewBuilder
     private var editorFooter: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
-                editorWindowResizeHint
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+        VStack(alignment: .leading, spacing: 8) {
+            editorWindowResizeHint
+                .fixedSize(horizontal: false, vertical: true)
 
-                Spacer(minLength: 12)
-
-                editorRestoreDefaultsButton
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                editorWindowResizeHint
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
                     Spacer()
+                    editorRestoreWindowSizeButton
+                        .fixedSize(horizontal: true, vertical: false)
+                    editorRestoreDefaultsButton
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+
+                VStack(alignment: .trailing, spacing: 6) {
+                    editorRestoreWindowSizeButton
                     editorRestoreDefaultsButton
                 }
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
     }
@@ -374,6 +405,26 @@ struct SettingsView: View {
         .accessibilityElement(children: .combine)
     }
 
+    private var editorRestoreWindowSizeButton: some View {
+        Button {
+            NotificationCenter.default.post(
+                name: MainWindowCommandNotification.restoreDefaultSize,
+                object: nil
+            )
+        } label: {
+            Label(
+                L10n.text(.settingsEditorRestoreWindowSize),
+                systemImage: windowSizeRestoreConfirmationID == nil
+                    ? "arrow.counterclockwise"
+                    : "checkmark"
+            )
+        }
+        .accessibilityHint(
+            Text(L10n.text(.settingsEditorRestoreWindowSizeAccessibilityHint))
+        )
+        .help(L10n.text(.settingsEditorRestoreWindowSizeAccessibilityHint))
+    }
+
     private var editorRestoreDefaultsButton: some View {
         Button(L10n.text(.settingsEditorRestoreDefaults)) {
             storedEditorFontSize = EditorFontSizePreference.defaultValue
@@ -388,6 +439,17 @@ struct SettingsView: View {
         )
         .accessibilityLabel(Text(L10n.text(.settingsEditorRestoreDefaultsAccessibilityLabel)))
         .accessibilityHint(Text(L10n.text(.settingsEditorRestoreDefaultsAccessibilityHint)))
+    }
+
+    private func announceForAccessibility(_ message: String) {
+        NSAccessibility.post(
+            element: NSApplication.shared,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: message,
+                .priority: NSAccessibilityPriorityLevel.high.rawValue,
+            ]
+        )
     }
 
     private var globalHotKeyControls: some View {
@@ -729,7 +791,9 @@ struct SettingsWindowActivator: NSViewRepresentable {
     final class Coordinator {
         private weak var window: NSWindow?
         private var didBecomeKeyObserver: NSObjectProtocol?
+        private var didResignKeyObserver: NSObjectProtocol?
         private var willCloseObserver: NSObjectProtocol?
+        private var originalWindowLevel: NSWindow.Level?
         private var isVisible = false
         private var isWindowClosing = false
         private var isInvalidated = false
@@ -750,34 +814,62 @@ struct SettingsWindowActivator: NSViewRepresentable {
                 if window.isVisible {
                     isWindowClosing = false
                     setVisible(true)
+                    if window.isKeyWindow {
+                        elevateSettingsWindow(window)
+                    }
                 }
                 return
             }
 
             detach()
             self.window = window
+            originalWindowLevel = window.level
             isWindowClosing = false
             didBecomeKeyObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.didBecomeKeyNotification,
                 object: window,
                 queue: .main
-            ) { [weak self] _ in
+            ) { [weak self, weak window] _ in
+                guard let window else { return }
                 self?.isWindowClosing = false
                 self?.setVisible(true)
+                self?.elevateSettingsWindow(window)
+            }
+            didResignKeyObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didResignKeyNotification,
+                object: window,
+                queue: .main
+            ) { [weak self, weak window] _ in
+                guard let window else { return }
+                self?.restoreOriginalWindowLevel(window)
             }
             willCloseObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.willCloseNotification,
                 object: window,
                 queue: .main
-            ) { [weak self] _ in
+            ) { [weak self, weak window] _ in
+                guard let window else { return }
                 self?.isWindowClosing = true
                 self?.setVisible(false)
+                self?.restoreOriginalWindowLevel(window)
             }
 
             guard !isWindowClosing else { return }
             setVisible(true)
+            elevateSettingsWindow(window)
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
+        }
+
+        private func elevateSettingsWindow(_ window: NSWindow) {
+            guard self.window === window else { return }
+            window.level = SettingsWindowLevelPolicy.active
+            window.orderFront(nil)
+        }
+
+        private func restoreOriginalWindowLevel(_ window: NSWindow) {
+            guard self.window === window else { return }
+            window.level = originalWindowLevel ?? .normal
         }
 
         private func applyTheme(
@@ -801,12 +893,20 @@ struct SettingsWindowActivator: NSViewRepresentable {
             if let didBecomeKeyObserver {
                 NotificationCenter.default.removeObserver(didBecomeKeyObserver)
             }
+            if let didResignKeyObserver {
+                NotificationCenter.default.removeObserver(didResignKeyObserver)
+            }
             if let willCloseObserver {
                 NotificationCenter.default.removeObserver(willCloseObserver)
             }
             didBecomeKeyObserver = nil
+            didResignKeyObserver = nil
             willCloseObserver = nil
+            if let window {
+                restoreOriginalWindowLevel(window)
+            }
             window = nil
+            originalWindowLevel = nil
             isWindowClosing = false
             setVisible(false)
         }

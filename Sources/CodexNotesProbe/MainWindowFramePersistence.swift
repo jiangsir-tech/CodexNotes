@@ -7,6 +7,11 @@ enum MainWindowFramePersistencePlan: Equatable {
 }
 
 enum MainWindowFramePersistence {
+    private struct ParsedFrameDescriptor {
+        let windowFrame: NSRect
+        let screenFrame: NSRect
+    }
+
     static let autosaveName = "CodexNotes.MainWindow"
     static let autosaveDefaultsKey = "NSWindow Frame \(autosaveName)"
 
@@ -143,6 +148,45 @@ enum MainWindowFramePersistence {
         defaults.set(window.frameDescriptor, forKey: autosaveDefaultsKey)
     }
 
+    @MainActor
+    @discardableResult
+    static func restoreDefaultSize(
+        window: NSWindow,
+        visibleFrames suppliedVisibleFrames: [NSRect]? = nil,
+        defaults: UserDefaults = .standard
+    ) -> Bool {
+        let trustedFrame = savedWindowFrame(
+            forKey: autosaveDefaultsKey,
+            in: defaults
+        ) ?? window.frame
+        let visibleFrames = suppliedVisibleFrames
+            ?? NSScreen.screens.map(\.visibleFrame)
+        let fallbackVisibleFrame: NSRect?
+        if suppliedVisibleFrames != nil {
+            fallbackVisibleFrame = visibleFrames.first
+        } else {
+            fallbackVisibleFrame = window.screen?.visibleFrame
+                ?? NSScreen.main?.visibleFrame
+                ?? visibleFrames.first
+        }
+        guard let visibleFrame = MainWindowInitialPlacementPolicy.visibleFrame(
+            containingMostOf: trustedFrame,
+            among: visibleFrames
+        ) ?? fallbackVisibleFrame else {
+            return false
+        }
+
+        let restoredFrame = MainWindowInitialPlacementPolicy
+            .frameByRestoringDefaultSize(
+                from: trustedFrame,
+                in: visibleFrame
+            )
+        _ = window.setFrameAutosaveName("")
+        window.setFrame(restoredFrame, display: window.isVisible)
+        persist(window: window, defaults: defaults)
+        return true
+    }
+
     static func preferredLegacyFrame(in defaults: UserDefaults) -> String? {
         defaults.dictionaryRepresentation()
             .compactMap { key, value -> (key: String, frame: String)? in
@@ -182,17 +226,51 @@ enum MainWindowFramePersistence {
         return frame
     }
 
+    private static func savedWindowFrame(
+        forKey key: String,
+        in defaults: UserDefaults
+    ) -> NSRect? {
+        guard let frame = defaults.string(forKey: key) else {
+            return nil
+        }
+        return parsedFrameDescriptor(frame)?.windowFrame
+    }
+
     private static func isValidFrame(_ frame: String) -> Bool {
+        parsedFrameDescriptor(frame) != nil
+    }
+
+    private static func parsedFrameDescriptor(
+        _ frame: String
+    ) -> ParsedFrameDescriptor? {
         let components = frame.split(whereSeparator: { $0.isWhitespace })
         guard components.count == 8 else {
-            return false
+            return nil
         }
         let values = components.compactMap { Double($0) }
         guard values.count == components.count,
               values.allSatisfy(\.isFinite) else {
-            return false
+            return nil
         }
-        return values[2] > 0 && values[3] > 0 &&
-            values[6] > 0 && values[7] > 0
+        guard values[2] > 0,
+              values[3] > 0,
+              values[6] > 0,
+              values[7] > 0 else {
+            return nil
+        }
+        return ParsedFrameDescriptor(
+            windowFrame: NSRect(
+                x: values[0],
+                y: values[1],
+                width: values[2],
+                height: values[3]
+            ),
+            screenFrame: NSRect(
+                x: values[4],
+                y: values[5],
+                width: values[6],
+                height: values[7]
+            )
+        )
     }
 }

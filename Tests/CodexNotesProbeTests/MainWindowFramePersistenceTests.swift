@@ -276,7 +276,7 @@ final class MainWindowFramePersistenceTests: XCTestCase {
             }
 
             XCTAssertEqual(firstPlacementCount, 1)
-            XCTAssertEqual(firstWindow.frame.size, NSSize(width: 548, height: 725))
+            XCTAssertEqual(firstWindow.frame.size, NSSize(width: 480, height: 680))
 
             let relaunchedWindow = makeWindow(
                 frame: testFrame(xOffset: 40, yOffset: 40)
@@ -300,7 +300,113 @@ final class MainWindowFramePersistenceTests: XCTestCase {
             XCTAssertEqual(relaunchPlacementCount, 0)
             XCTAssertEqual(
                 relaunchedWindow.frame.size,
-                NSSize(width: 548, height: 725)
+                NSSize(width: 480, height: 680)
+            )
+        }
+    }
+
+    func testRestoreDefaultSizeUsesStableHiddenFrameAndPersistsForRelaunch() {
+        withDefaults { defaults in
+            let trustedFrame = NSRect(
+                x: 300,
+                y: 200,
+                width: 452,
+                height: 638
+            )
+            seedStableFrame(trustedFrame, defaults: defaults)
+
+            let hiddenWindow = makeWindow(
+                frame: NSRect(x: 80, y: 90, width: 360, height: 560)
+            )
+            defer { hiddenWindow.orderOut(nil) }
+            XCTAssertFalse(hiddenWindow.isVisible)
+
+            XCTAssertTrue(
+                MainWindowFramePersistence.restoreDefaultSize(
+                    window: hiddenWindow,
+                    visibleFrames: [
+                        NSRect(x: 0, y: 0, width: 2_560, height: 1_409)
+                    ],
+                    defaults: defaults
+                )
+            )
+            let expectedFrame = NSRect(
+                x: 300,
+                y: 158,
+                width: 480,
+                height: 680
+            )
+            assertFrame(hiddenWindow.frame, equals: expectedFrame)
+            XCTAssertFalse(hiddenWindow.isVisible)
+
+            let relaunchedWindow = makeWindow(
+                frame: testFrame(xOffset: 20, yOffset: 20)
+            )
+            defer { relaunchedWindow.orderOut(nil) }
+            var initialPlacementCount = 0
+            MainWindowFramePersistence.configure(
+                window: relaunchedWindow,
+                defaults: defaults
+            ) {
+                initialPlacementCount += 1
+            }
+
+            XCTAssertEqual(initialPlacementCount, 0)
+            assertFrame(relaunchedWindow.frame, equals: expectedFrame)
+        }
+    }
+
+    func testRestoreDefaultSizeCommandKeepsMainWindowHiddenAndConfirmsSuccess() {
+        withStandardFrameDefaults { defaults in
+            guard let visibleFrame = NSScreen.main?.visibleFrame else {
+                XCTFail("A visible screen is required for the window test")
+                return
+            }
+            let stableFrame = NSRect(
+                x: visibleFrame.minX + 24,
+                y: visibleFrame.minY + 24,
+                width: 452,
+                height: 638
+            )
+            seedStableFrame(stableFrame, defaults: defaults)
+
+            let window = makeWindow(frame: stableFrame)
+            window.identifier = CodexNotesWindowIdentifier.main
+            let coordinator = WindowConfigurator.Coordinator()
+            var restoredWindow: NSWindow?
+            let observer = NotificationCenter.default.addObserver(
+                forName: MainWindowCommandNotification.didRestoreDefaultSize,
+                object: nil,
+                queue: .main
+            ) { notification in
+                restoredWindow = notification.object as? NSWindow
+            }
+            defer {
+                NotificationCenter.default.removeObserver(observer)
+                coordinator.invalidate()
+                window.orderOut(nil)
+            }
+
+            coordinator.attach(to: window, languageRevision: "test")
+            window.orderOut(nil)
+            NotificationCenter.default.post(
+                name: MainWindowCommandNotification.restoreDefaultSize,
+                object: nil
+            )
+
+            XCTAssertTrue(restoredWindow === window)
+            XCTAssertFalse(window.isVisible)
+            XCTAssertEqual(
+                window.frame.size,
+                MainWindowInitialPlacementPolicy.preferredSize(
+                    forVisibleFrameSize: visibleFrame.size
+                )
+            )
+            XCTAssertEqual(
+                defaults.string(
+                    forKey: MainWindowFramePersistence.autosaveDefaultsKey
+                ),
+                window.frameDescriptor
             )
         }
     }
