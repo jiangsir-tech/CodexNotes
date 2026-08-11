@@ -74,6 +74,13 @@ private enum SelectionMoveCoordinationError: LocalizedError {
 
 @MainActor
 final class ProbeViewModel: ObservableObject {
+    typealias SelectionMoveNoticeScheduledAction = @MainActor () -> Void
+    typealias SelectionMoveNoticeDismissalCancellation = @MainActor () -> Void
+    typealias SelectionMoveNoticeScheduler = @MainActor (
+        _ delay: Duration,
+        _ action: @escaping SelectionMoveNoticeScheduledAction
+    ) -> SelectionMoveNoticeDismissalCancellation
+
     enum State: Equatable {
         case starting
         case detected
@@ -129,12 +136,14 @@ final class ProbeViewModel: ObservableObject {
     private let metadataRefreshInterval: Duration
     private let newTaskProjectRefreshInterval: Duration
     private let selectionMoveNoticeDuration: Duration
+    private let selectionMoveNoticeScheduler: SelectionMoveNoticeScheduler
     private var monitoringTask: Task<Void, Never>?
     private var metadataRefreshTask: Task<Void, Never>?
     private var metadataRefreshRequestID: UUID?
     private var nextMetadataRefresh: ContinuousClock.Instant?
     private var autosaveTask: Task<Void, Never>?
-    private var selectionMoveNoticeDismissalTask: Task<Void, Never>?
+    private var selectionMoveNoticeDismissalCancellation:
+        SelectionMoveNoticeDismissalCancellation?
     private var selectionMoveNoticeDismissalRequestID: UUID?
     private var selectionMoveNoticeIsHovered = false
     private var isLoadingDocument = false
@@ -161,7 +170,8 @@ final class ProbeViewModel: ObservableObject {
         globalProjectCandidateProvider: any CodexGlobalProjectCandidateProviding = CodexProjectStore(),
         metadataRefreshInterval: Duration = .seconds(1),
         newTaskProjectRefreshInterval: Duration = .milliseconds(250),
-        selectionMoveNoticeDuration: Duration = .seconds(8)
+        selectionMoveNoticeDuration: Duration = .seconds(8),
+        selectionMoveNoticeScheduler: SelectionMoveNoticeScheduler? = nil
     ) {
         self.noteStore = noteStore
         self.noteImageStore = noteImageStore ?? NoteImageStore(rootURL: noteStore.rootURL)
@@ -170,13 +180,17 @@ final class ProbeViewModel: ObservableObject {
         self.metadataRefreshInterval = metadataRefreshInterval
         self.newTaskProjectRefreshInterval = newTaskProjectRefreshInterval
         self.selectionMoveNoticeDuration = selectionMoveNoticeDuration
+        self.selectionMoveNoticeScheduler = selectionMoveNoticeScheduler
+            ?? Self.mainQueueSelectionMoveNoticeScheduler
     }
 
     deinit {
         monitoringTask?.cancel()
         metadataRefreshTask?.cancel()
         autosaveTask?.cancel()
-        selectionMoveNoticeDismissalTask?.cancel()
+        MainActor.assumeIsolated {
+            selectionMoveNoticeDismissalCancellation?()
+        }
     }
 
     var canEdit: Bool {
@@ -1201,21 +1215,17 @@ final class ProbeViewModel: ObservableObject {
         let requestID = UUID()
         let duration = selectionMoveNoticeDuration
         selectionMoveNoticeDismissalRequestID = requestID
-        selectionMoveNoticeDismissalTask = Task { [weak self] in
-            do {
-                try await Task.sleep(for: duration)
-            } catch {
-                return
-            }
-            guard !Task.isCancelled else { return }
+        selectionMoveNoticeDismissalCancellation = selectionMoveNoticeScheduler(
+            duration
+        ) { [weak self] in
             self?.expireSelectionMoveNotice(requestID: requestID)
         }
     }
 
     private func cancelSelectionMoveNoticeDismissal() {
         selectionMoveNoticeDismissalRequestID = nil
-        selectionMoveNoticeDismissalTask?.cancel()
-        selectionMoveNoticeDismissalTask = nil
+        selectionMoveNoticeDismissalCancellation?()
+        selectionMoveNoticeDismissalCancellation = nil
     }
 
     private func expireSelectionMoveNotice(requestID: UUID) {
@@ -1223,10 +1233,26 @@ final class ProbeViewModel: ObservableObject {
               !selectionMoveNoticeIsHovered
         else { return }
         selectionMoveNoticeDismissalRequestID = nil
-        selectionMoveNoticeDismissalTask = nil
+        selectionMoveNoticeDismissalCancellation = nil
         selectionMoveNotice = nil
         pendingSelectionMove = nil
     }
+
+    private static let mainQueueSelectionMoveNoticeScheduler:
+        SelectionMoveNoticeScheduler = { duration, action in
+            let task = Task { @MainActor in
+                do {
+                    try await Task.sleep(for: duration)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
+                action()
+            }
+            return {
+                task.cancel()
+            }
+        }
 
     private func clearSelectionMoveNotice() {
         cancelSelectionMoveNoticeDismissal()

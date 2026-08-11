@@ -234,29 +234,36 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
         try await waitUntil { harness.model.selectionMoveNotice == nil }
     }
 
-    func testHoverPausesNoticeAndLeavingRestartsFullDuration() async throws {
+    func testHoverPausesNoticeAndLeavingRestartsFullDuration() throws {
+        let scheduler = SelectionMoveNoticeTestScheduler()
         let harness = try makeHarness(
             taskText: "悬停测试",
             projectText: "项目正文",
-            selectionMoveNoticeDuration: .milliseconds(180)
+            selectionMoveNoticeDuration: .milliseconds(180),
+            selectionMoveNoticeScheduler: scheduler.schedule
         )
         defer { harness.removeTemporaryFiles() }
 
         let moveSnapshot = try snapshot(in: harness.model, selecting: "悬停测试")
         XCTAssertNotNil(move(moveSnapshot, in: harness.model, to: .project))
         let noticeID = try XCTUnwrap(harness.model.selectionMoveNotice?.id)
-        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(scheduler.scheduledDelays, [.milliseconds(180)])
 
         harness.model.setSelectionMoveNoticeHovered(true, for: noticeID)
-        try await Task.sleep(for: .milliseconds(250))
+        scheduler.advance(by: .seconds(1))
         XCTAssertNotNil(harness.model.selectionMoveNotice)
         XCTAssertEqual(harness.model.selectionMoveNotice?.canUndo, true)
 
         harness.model.setSelectionMoveNoticeHovered(false, for: noticeID)
-        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(
+            scheduler.scheduledDelays,
+            [.milliseconds(180), .milliseconds(180)]
+        )
+        scheduler.advance(by: .milliseconds(179))
         XCTAssertNotNil(harness.model.selectionMoveNotice)
 
-        try await waitUntil { harness.model.selectionMoveNotice == nil }
+        scheduler.advance(by: .milliseconds(1))
+        XCTAssertNil(harness.model.selectionMoveNotice)
         XCTAssertNil(harness.model.undoLastSelectionMove())
     }
 
@@ -722,7 +729,8 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
     private func makeHarness(
         taskText: String,
         projectText: String,
-        selectionMoveNoticeDuration: Duration = .seconds(8)
+        selectionMoveNoticeDuration: Duration = .seconds(8),
+        selectionMoveNoticeScheduler: ProbeViewModel.SelectionMoveNoticeScheduler? = nil
     ) throws -> SelectionMoveHarness {
         let root = temporaryNoteRoot()
         let selection = makeSelection()
@@ -742,7 +750,8 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
             noteStore: store,
             metadataProvider: provider,
             metadataRefreshInterval: .zero,
-            selectionMoveNoticeDuration: selectionMoveNoticeDuration
+            selectionMoveNoticeDuration: selectionMoveNoticeDuration,
+            selectionMoveNoticeScheduler: selectionMoveNoticeScheduler
         )
         model.apply(selection, recordLatency: false)
         return SelectionMoveHarness(
@@ -824,6 +833,44 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
             hostID: nil,
             stableKey: "local:\(id)"
         )
+    }
+}
+
+@MainActor
+private final class SelectionMoveNoticeTestScheduler {
+    private final class Token {
+        var isCancelled = false
+    }
+
+    private struct Entry {
+        let deadline: Duration
+        let token: Token
+        let action: ProbeViewModel.SelectionMoveNoticeScheduledAction
+    }
+
+    private var now: Duration = .zero
+    private var entries: [Entry] = []
+    private(set) var scheduledDelays: [Duration] = []
+
+    func schedule(
+        after delay: Duration,
+        action: @escaping ProbeViewModel.SelectionMoveNoticeScheduledAction
+    ) -> ProbeViewModel.SelectionMoveNoticeDismissalCancellation {
+        let token = Token()
+        entries.append(Entry(deadline: now + delay, token: token, action: action))
+        scheduledDelays.append(delay)
+        return {
+            token.isCancelled = true
+        }
+    }
+
+    func advance(by interval: Duration) {
+        now += interval
+        let dueEntries = entries.filter { $0.deadline <= now }
+        entries.removeAll { $0.deadline <= now }
+        for entry in dueEntries where !entry.token.isCancelled {
+            entry.action()
+        }
     }
 }
 
