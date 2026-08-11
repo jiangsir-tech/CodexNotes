@@ -2004,7 +2004,12 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         )
         harness.textView.selectionMovePresentationDelay = 0
         harness.textView.setSelectedRange(range)
-        runMainLoop()
+        XCTAssertTrue(
+            waitUntil {
+                harness.textView.visibleSelectionToolbar != nil
+                    && harness.textView.visibleSelectionMovePill != nil
+            }
+        )
 
         let snapshot = try XCTUnwrap(harness.controller.currentSelectionSnapshot())
         let toolbar = try XCTUnwrap(harness.textView.visibleSelectionToolbar)

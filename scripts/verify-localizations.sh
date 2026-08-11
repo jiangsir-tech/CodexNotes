@@ -38,14 +38,29 @@ diff -u "$TEMP_DIRECTORY/declared.keys" "$TEMP_DIRECTORY/zh-Hans.keys"
 diff -u "$TEMP_DIRECTORY/zh-Hans.keys" "$TEMP_DIRECTORY/en.keys"
 diff -u "$TEMP_DIRECTORY/zh-Hans.tokens" "$TEMP_DIRECTORY/en.tokens"
 
-if rg -n '[一-龥]' \
-    "$PROJECT_ROOT/Sources/CodexNotesCore" \
-    "$PROJECT_ROOT/Sources/CodexNotesProbe" \
-    "$PROJECT_ROOT/Sources/CodexNotesProbeCheck" \
-    -g '*.swift'; then
-    echo "生产 Swift 源码仍含中文文案，请迁移到 Localizable.strings。" >&2
+SWIFT_SOURCE_FILES=(
+    "$PROJECT_ROOT/Sources/CodexNotesCore"/**/*.swift(N)
+    "$PROJECT_ROOT/Sources/CodexNotesProbe"/**/*.swift(N)
+    "$PROJECT_ROOT/Sources/CodexNotesProbeCheck"/**/*.swift(N)
+)
+if (( ${#SWIFT_SOURCE_FILES[@]} == 0 )); then
+    echo "未找到可验证的 Swift 源码。" >&2
     exit 1
 fi
+GREP_STATUS=0
+/usr/bin/grep -nH '[一-龥]' "${SWIFT_SOURCE_FILES[@]}" || GREP_STATUS=$?
+case "$GREP_STATUS" in
+    0)
+        echo "生产 Swift 源码仍含中文文案，请迁移到 Localizable.strings。" >&2
+        exit 1
+        ;;
+    1)
+        ;;
+    *)
+        echo "无法扫描生产 Swift 源码（grep 退出码 $GREP_STATUS）。" >&2
+        exit "$GREP_STATUS"
+        ;;
+esac
 
 if [[ $# -gt 0 ]]; then
     APP_PATH="$1"
@@ -53,11 +68,16 @@ if [[ $# -gt 0 ]]; then
         echo "应用不存在：$APP_PATH" >&2
         exit 1
     fi
+    CORE_RESOURCE_BUNDLE="$APP_PATH/Contents/Resources/CodexNotesProbe_CodexNotesCore.bundle"
+    if [[ ! -d "$CORE_RESOURCE_BUNDLE" ]]; then
+        echo "应用缺少 Core 资源包：$APP_PATH" >&2
+        exit 1
+    fi
     for LANGUAGE in "${LANGUAGES[@]}"; do
         SOURCE_STRINGS="$RESOURCE_ROOT/$LANGUAGE.lproj/Localizable.strings"
         APP_STRINGS="$(find \
-            "$APP_PATH/Contents/Resources" \
-            -path "*/CodexNotesProbe_CodexNotesCore.bundle/*/$LANGUAGE.lproj/Localizable.strings" \
+            "$CORE_RESOURCE_BUNDLE" \
+            -path "*/$LANGUAGE.lproj/Localizable.strings" \
             -type f \
             -print \
             -quit)"
