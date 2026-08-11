@@ -47,12 +47,29 @@ if (( ${#SWIFT_SOURCE_FILES[@]} == 0 )); then
     echo "未找到可验证的 Swift 源码。" >&2
     exit 1
 fi
-GREP_STATUS=0
-# The GitHub Xcode 15.4 image defaults to the C collation, where this
-# multibyte range also matches unrelated symbols such as em dashes and ⌘.
-LC_ALL=en_US.UTF-8 /usr/bin/grep -nH '[一-龥]' \
-    "${SWIFT_SOURCE_FILES[@]}" || GREP_STATUS=$?
-case "$GREP_STATUS" in
+HAN_SCAN_STATUS=0
+# Older BSD grep versions treat a multibyte character range according to
+# collation order and can mistake symbols such as em dashes and ⌘ for Han.
+/usr/bin/perl -CSDA -e '
+    use strict;
+    use warnings;
+    my $found_han = 0;
+    for my $path (@ARGV) {
+        open my $handle, "<:encoding(UTF-8)", $path
+            or die "Cannot open $path: $!\n";
+        my $line_number = 0;
+        while (my $line = <$handle>) {
+            $line_number += 1;
+            if ($line =~ /\p{Han}/) {
+                print "$path:$line_number:$line";
+                $found_han = 1;
+            }
+        }
+        close $handle or die "Cannot close $path: $!\n";
+    }
+    exit($found_han ? 0 : 1);
+' "${SWIFT_SOURCE_FILES[@]}" || HAN_SCAN_STATUS=$?
+case "$HAN_SCAN_STATUS" in
     0)
         echo "生产 Swift 源码仍含中文文案，请迁移到 Localizable.strings。" >&2
         exit 1
@@ -60,8 +77,8 @@ case "$GREP_STATUS" in
     1)
         ;;
     *)
-        echo "无法扫描生产 Swift 源码（grep 退出码 $GREP_STATUS）。" >&2
-        exit "$GREP_STATUS"
+        echo "无法扫描生产 Swift 源码（退出码 $HAN_SCAN_STATUS）。" >&2
+        exit "$HAN_SCAN_STATUS"
         ;;
 esac
 
