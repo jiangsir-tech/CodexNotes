@@ -95,9 +95,9 @@ if [[ $# -gt 0 ]]; then
     fi
     for LANGUAGE in "${LANGUAGES[@]}"; do
         SOURCE_STRINGS="$RESOURCE_ROOT/$LANGUAGE.lproj/Localizable.strings"
-        APP_STRINGS="$(find \
+        APP_STRINGS="$(/usr/bin/find \
             "$CORE_RESOURCE_BUNDLE" \
-            -path "*/$LANGUAGE.lproj/Localizable.strings" \
+            -ipath "*/$LANGUAGE.lproj/Localizable.strings" \
             -type f \
             -print \
             -quit)"
