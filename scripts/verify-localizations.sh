@@ -48,7 +48,10 @@ if (( ${#SWIFT_SOURCE_FILES[@]} == 0 )); then
     exit 1
 fi
 GREP_STATUS=0
-/usr/bin/grep -nH '[一-龥]' "${SWIFT_SOURCE_FILES[@]}" || GREP_STATUS=$?
+# The GitHub Xcode 15.4 image defaults to the C collation, where this
+# multibyte range also matches unrelated symbols such as em dashes and ⌘.
+LC_ALL=en_US.UTF-8 /usr/bin/grep -nH '[一-龥]' \
+    "${SWIFT_SOURCE_FILES[@]}" || GREP_STATUS=$?
 case "$GREP_STATUS" in
     0)
         echo "生产 Swift 源码仍含中文文案，请迁移到 Localizable.strings。" >&2
