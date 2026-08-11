@@ -310,8 +310,7 @@ final class CarbonGlobalHotKeyBackend: GlobalHotKeyRegistering {
     init(
         cleanupRetryDelays: [TimeInterval] = CarbonGlobalHotKeyBackend
             .defaultCleanupRetryDelays,
-        cleanupScheduler: @escaping CleanupScheduler = CarbonGlobalHotKeyBackend
-            .mainQueueCleanupScheduler,
+        cleanupScheduler: CleanupScheduler? = nil,
         registrationOperation: RegistrationOperation? = nil,
         unregistrationOperation: @escaping UnregistrationOperation = {
             UnregisterEventHotKey($0)
@@ -319,6 +318,7 @@ final class CarbonGlobalHotKeyBackend: GlobalHotKeyRegistering {
     ) {
         self.cleanupRetryDelays = cleanupRetryDelays.map { max(0, $0) }
         self.cleanupScheduler = cleanupScheduler
+            ?? CarbonGlobalHotKeyBackend.mainQueueCleanupScheduler
         self.registrationOperation = registrationOperation
         self.unregistrationOperation = unregistrationOperation
     }
