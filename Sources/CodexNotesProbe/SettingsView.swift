@@ -39,8 +39,11 @@ enum SettingsGeneralPresentation {
 }
 
 struct SettingsView: View {
+    @ObservedObject private var updateCoordinator: UpdateCheckCoordinator
+    @ObservedObject private var globalHotKeyController: GlobalHotKeyController
     @Environment(\.colorScheme) private var inheritedColorScheme
     @StateObject private var loginItemService = LoginItemService()
+    @State private var globalHotKeyErrorKey: L10n.Key?
     @AppStorage(AppLanguagePreference.key)
     private var storedLanguage = AppLanguagePreference.defaultValue.rawValue
     @AppStorage(EditorFontSizePreference.key)
@@ -51,6 +54,16 @@ struct SettingsView: View {
     private var storedThemeID = NoteThemePreference.defaultValue.rawValue
     @AppStorage(StatusBarIconPreference.key)
     private var storedStatusBarIconID = StatusBarIconPreference.defaultValue.rawValue
+
+    init(
+        updateCoordinator: UpdateCheckCoordinator,
+        globalHotKeyController: GlobalHotKeyController
+    ) {
+        _updateCoordinator = ObservedObject(wrappedValue: updateCoordinator)
+        _globalHotKeyController = ObservedObject(
+            wrappedValue: globalHotKeyController
+        )
+    }
 
     private var activeTheme: NoteThemeID {
         NoteThemePreference.normalized(storedThemeID)
@@ -145,72 +158,14 @@ struct SettingsView: View {
                         Divider()
                             .overlay(palette.separator.color)
 
+                        globalHotKeyControls
+
+                        Divider()
+                            .overlay(palette.separator.color)
+
                         launchAtLoginControls
                     }
                     .frame(maxWidth: .infinity)
-                }
-
-                settingsPanel(title: L10n.text(.settingsStatusBarIconTitle)) {
-                    Text(L10n.text(.settingsStatusBarIconDescription))
-                        .font(.caption)
-                        .foregroundStyle(palette.secondaryText.color)
-
-                    HStack(spacing: 12) {
-                        ForEach(StatusBarIconID.allCases, id: \.self) { icon in
-                            StatusBarIconChoiceCard(
-                                icon: icon,
-                                isSelected: icon == activeStatusBarIcon,
-                                palette: palette,
-                                languageRevision: languageRevision
-                            ) {
-                                storedStatusBarIconID = icon.rawValue
-                            }
-                        }
-                    }
-                }
-
-                settingsPanel(title: L10n.text(.settingsAppearanceTitle)) {
-                    Text(L10n.text(.settingsAppearanceDescription))
-                        .font(.caption)
-                        .foregroundStyle(palette.secondaryText.color)
-
-                    VStack(spacing: 12) {
-                        LazyVGrid(
-                            columns: [
-                                GridItem(.flexible(), spacing: 12),
-                                GridItem(.flexible(), spacing: 12)
-                            ],
-                            spacing: 12
-                        ) {
-                            ForEach(
-                                NoteThemeID.allCases.filter { $0 != .systemOriginal },
-                                id: \.self
-                            ) { theme in
-                                ThemeChoiceCard(
-                                    theme: theme,
-                                    isSelected: theme == activeTheme,
-                                    languageRevision: languageRevision
-                                ) {
-                                    storedThemeID = theme.rawValue
-                                }
-                            }
-                        }
-
-                        Text(L10n.text(.settingsAppearanceOriginal))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(palette.secondaryText.color)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 2)
-
-                        ThemeChoiceCard(
-                            theme: .systemOriginal,
-                            isSelected: activeTheme == .systemOriginal,
-                            languageRevision: languageRevision
-                        ) {
-                            storedThemeID = NoteThemeID.systemOriginal.rawValue
-                        }
-                    }
-                    .accessibilityLabel(Text(L10n.text(.settingsAppearanceThemesAccessibilityLabel)))
                 }
 
                 settingsPanel(title: L10n.text(.settingsEditorTitle)) {
@@ -270,22 +225,78 @@ struct SettingsView: View {
                         )
                         .accessibilityLabel(Text(L10n.text(.settingsEditorPreviewAccessibilityLabel)))
 
-                    HStack {
-                        Spacer()
-                        Button(L10n.text(.settingsEditorRestoreDefaults)) {
-                            storedEditorFontSize = EditorFontSizePreference.defaultValue
-                            storedEditorLineSpacing = EditorLineSpacingPreference.defaultValue
+                    editorFooter
+                }
+
+                settingsPanel(title: L10n.text(.settingsAppearanceTitle)) {
+                    Text(L10n.text(.settingsAppearanceDescription))
+                        .font(.caption)
+                        .foregroundStyle(palette.secondaryText.color)
+
+                    VStack(spacing: 12) {
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.flexible(), spacing: 12),
+                                GridItem(.flexible(), spacing: 12)
+                            ],
+                            spacing: 12
+                        ) {
+                            ForEach(
+                                NoteThemeID.allCases.filter { $0 != .systemOriginal },
+                                id: \.self
+                            ) { theme in
+                                ThemeChoiceCard(
+                                    theme: theme,
+                                    isSelected: theme == activeTheme,
+                                    languageRevision: languageRevision
+                                ) {
+                                    storedThemeID = theme.rawValue
+                                }
+                            }
                         }
-                        .disabled(
-                            EditorFontSizePreference.normalized(storedEditorFontSize)
-                                == EditorFontSizePreference.defaultValue
-                                && EditorLineSpacingPreference.normalized(
-                                    storedEditorLineSpacing
-                                ) == EditorLineSpacingPreference.defaultValue
-                        )
-                        .accessibilityLabel(Text(L10n.text(.settingsEditorRestoreDefaultsAccessibilityLabel)))
-                        .accessibilityHint(Text(L10n.text(.settingsEditorRestoreDefaultsAccessibilityHint)))
+
+                        Text(L10n.text(.settingsAppearanceOriginal))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(palette.secondaryText.color)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 2)
+
+                        ThemeChoiceCard(
+                            theme: .systemOriginal,
+                            isSelected: activeTheme == .systemOriginal,
+                            languageRevision: languageRevision
+                        ) {
+                            storedThemeID = NoteThemeID.systemOriginal.rawValue
+                        }
                     }
+                    .accessibilityLabel(Text(L10n.text(.settingsAppearanceThemesAccessibilityLabel)))
+                }
+
+                settingsPanel(title: L10n.text(.settingsStatusBarIconTitle)) {
+                    Text(L10n.text(.settingsStatusBarIconDescription))
+                        .font(.caption)
+                        .foregroundStyle(palette.secondaryText.color)
+
+                    HStack(spacing: 12) {
+                        ForEach(StatusBarIconID.allCases, id: \.self) { icon in
+                            StatusBarIconChoiceCard(
+                                icon: icon,
+                                isSelected: icon == activeStatusBarIcon,
+                                palette: palette,
+                                languageRevision: languageRevision
+                            ) {
+                                storedStatusBarIconID = icon.rawValue
+                            }
+                        }
+                    }
+                }
+
+                settingsPanel(title: L10n.text(.settingsAboutTitle)) {
+                    AboutCodexNotesView(
+                        palette: palette,
+                        languageRevision: languageRevision,
+                        updateCoordinator: updateCoordinator
+                    )
                 }
             }
             .padding(20)
@@ -323,6 +334,139 @@ struct SettingsView: View {
             )
         ) { _ in
             loginItemService.refresh()
+        }
+    }
+
+    @ViewBuilder
+    private var editorFooter: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                editorWindowResizeHint
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+
+                Spacer(minLength: 12)
+
+                editorRestoreDefaultsButton
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                editorWindowResizeHint
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack {
+                    Spacer()
+                    editorRestoreDefaultsButton
+                }
+            }
+        }
+    }
+
+    private var editorWindowResizeHint: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                .accessibilityHidden(true)
+
+            Text(L10n.text(.settingsEditorWindowResizeHint))
+        }
+        .font(.caption)
+        .foregroundStyle(palette.secondaryText.color)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var editorRestoreDefaultsButton: some View {
+        Button(L10n.text(.settingsEditorRestoreDefaults)) {
+            storedEditorFontSize = EditorFontSizePreference.defaultValue
+            storedEditorLineSpacing = EditorLineSpacingPreference.defaultValue
+        }
+        .disabled(
+            EditorFontSizePreference.normalized(storedEditorFontSize)
+                == EditorFontSizePreference.defaultValue
+                && EditorLineSpacingPreference.normalized(
+                    storedEditorLineSpacing
+                ) == EditorLineSpacingPreference.defaultValue
+        )
+        .accessibilityLabel(Text(L10n.text(.settingsEditorRestoreDefaultsAccessibilityLabel)))
+        .accessibilityHint(Text(L10n.text(.settingsEditorRestoreDefaultsAccessibilityHint)))
+    }
+
+    private var globalHotKeyControls: some View {
+        GlobalHotKeyRecorderView(
+            shortcutDisplayName: globalHotKeyController.currentShortcut == nil
+                ? nil
+                : globalHotKeyController.displayName,
+            isRecording: globalHotKeyController.isRecording,
+            isDefault: globalHotKeyController.isDefault,
+            errorMessage: globalHotKeyErrorMessage,
+            palette: palette,
+            beginRecording: {
+                globalHotKeyErrorKey = nil
+                globalHotKeyController.beginRecording()
+            },
+            cancelRecording: {
+                globalHotKeyErrorKey = nil
+                globalHotKeyController.cancelRecording()
+            },
+            recordShortcut: { keyCode, modifierFlags in
+                let shortcut = GlobalHotKeyShortcut(
+                    keyCode: UInt32(keyCode),
+                    modifiers: GlobalHotKeyModifiers(
+                        nseventFlags: modifierFlags
+                    )
+                )
+                guard shortcut.validationIssue == nil else {
+                    globalHotKeyErrorKey = .settingsGlobalHotKeyInvalidShortcut
+                    return
+                }
+
+                handleGlobalHotKeyUpdateResult(
+                    globalHotKeyController.commitRecordedShortcut(shortcut)
+                )
+            },
+            clearShortcut: {
+                globalHotKeyErrorKey = nil
+                globalHotKeyController.clear()
+            },
+            restoreDefault: {
+                globalHotKeyErrorKey = nil
+                handleGlobalHotKeyUpdateResult(globalHotKeyController.restore())
+            }
+        )
+    }
+
+    private var globalHotKeyErrorMessage: String? {
+        if let globalHotKeyErrorKey {
+            return L10n.text(globalHotKeyErrorKey)
+        }
+        guard let issue = globalHotKeyController.registrationState.issue else {
+            return nil
+        }
+        return L10n.text(globalHotKeyErrorKey(for: issue))
+    }
+
+    private func globalHotKeyErrorKey(
+        for issue: GlobalHotKeyRegistrationIssue
+    ) -> L10n.Key {
+        switch issue {
+        case .invalidShortcut:
+            return .settingsGlobalHotKeyInvalidShortcut
+        case .conflict:
+            return .settingsGlobalHotKeyConflict
+        case .registrationFailed, .backendFailed:
+            return .settingsGlobalHotKeyRegistrationFailed
+        }
+    }
+
+    private func handleGlobalHotKeyUpdateResult(
+        _ result: GlobalHotKeyUpdateResult
+    ) {
+        switch result {
+        case .updated:
+            globalHotKeyErrorKey = nil
+        case .rejected:
+            globalHotKeyErrorKey = .settingsGlobalHotKeyInvalidShortcut
+        case .conflict, .failed:
+            globalHotKeyErrorKey = nil
         }
     }
 
@@ -578,7 +722,7 @@ private struct ThemeChoiceCard: View {
     }
 }
 
-private struct SettingsWindowActivator: NSViewRepresentable {
+struct SettingsWindowActivator: NSViewRepresentable {
     let appearanceName: NSAppearance.Name?
     let backgroundColor: NSColor
 
@@ -602,7 +746,13 @@ private struct SettingsWindowActivator: NSViewRepresentable {
                 appearanceName: appearanceName,
                 backgroundColor: backgroundColor
             )
-            guard self.window !== window else { return }
+            if self.window === window {
+                if window.isVisible {
+                    isWindowClosing = false
+                    setVisible(true)
+                }
+                return
+            }
 
             detach()
             self.window = window

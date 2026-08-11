@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var model: ProbeViewModel?
+    let globalHotKeyController = GlobalHotKeyController()
     private var statusItemController: StatusItemController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -19,6 +20,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if statusItemController == nil {
             statusItemController = StatusItemController()
         }
+        globalHotKeyController.start()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        globalHotKeyController.stop()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -48,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct CodexNotesProbeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = ProbeViewModel()
+    @StateObject private var updateCoordinator = UpdateCheckCoordinator()
     @AppStorage(AppLanguagePreference.key)
     private var storedLanguagePreference = AppLanguagePreference.defaultValue.rawValue
 
@@ -67,14 +74,20 @@ struct CodexNotesProbeApp: App {
         WindowGroup {
             ContentView(
                 model: model,
+                updateCoordinator: updateCoordinator,
+                globalHotKeyController: appDelegate.globalHotKeyController,
                 languagePreference: languagePreference
             )
                 .environment(\.locale, resolvedLanguage.locale)
                 .onAppear {
                     appDelegate.model = model
+                    updateCoordinator.start()
                 }
         }
-        .defaultSize(width: 400, height: 660)
+        .defaultSize(
+            width: MainWindowInitialPlacementPolicy.fallbackSize.width,
+            height: MainWindowInitialPlacementPolicy.fallbackSize.height
+        )
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -87,7 +100,10 @@ struct CodexNotesProbeApp: App {
         }
 
         Settings {
-            SettingsView()
+            SettingsView(
+                updateCoordinator: updateCoordinator,
+                globalHotKeyController: appDelegate.globalHotKeyController
+            )
                 .environment(\.locale, resolvedLanguage.locale)
         }
     }

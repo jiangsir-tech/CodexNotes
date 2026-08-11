@@ -20,8 +20,12 @@ enum MainWindowTogglePolicy {
     static func action(
         isApplicationHidden: Bool,
         isWindowVisible: Bool,
-        isWindowMiniaturized: Bool
+        isWindowMiniaturized: Bool,
+        isSettingsVisible: Bool = false
     ) -> MainWindowToggleAction {
+        if isSettingsVisible {
+            return .show
+        }
         if isApplicationHidden || !isWindowVisible || isWindowMiniaturized {
             return .show
         }

@@ -6,8 +6,10 @@ import XCTest
 
 @MainActor
 final class ShortcutReferencePanelTests: XCTestCase {
-    func testStandardReferenceContainsExactlyTheFiveApprovedShortcuts() {
-        let presentation = ShortcutReferencePresentation.standard
+    func testStandardReferenceContainsGlobalShortcutBeforeTheFiveEditorShortcuts() {
+        let presentation = ShortcutReferencePresentation.standard(
+            globalHotKeyDisplayName: "⌃⇧Space"
+        )
 
         XCTAssertEqual(presentation.title, L10n.text(.shortcutsTitle))
         XCTAssertEqual(
@@ -17,14 +19,27 @@ final class ShortcutReferencePanelTests: XCTestCase {
         XCTAssertEqual(
             presentation.sections.map(\.title),
             [
+                L10n.text(.shortcutsSectionGlobal),
                 L10n.text(.shortcutsSectionTodos),
                 L10n.text(.shortcutsSectionNotes),
                 L10n.text(.shortcutsSectionFormatting),
             ]
         )
         XCTAssertEqual(
+            presentation.sections.first?.note,
+            L10n.text(.shortcutsGlobalAvailabilityNote)
+        )
+        XCTAssertTrue(
+            presentation.sections.dropFirst().allSatisfy { $0.note == nil }
+        )
+        XCTAssertEqual(
             presentation.items,
             [
+                ShortcutReferenceItem(
+                    id: .toggleCodexNotes,
+                    title: L10n.text(.shortcutsItemToggleCodexNotes),
+                    shortcut: "⌃⇧Space"
+                ),
                 ShortcutReferenceItem(
                     id: .cycleTodo,
                     title: L10n.text(.shortcutsItemToggleCurrentLineTodo),
@@ -52,7 +67,40 @@ final class ShortcutReferencePanelTests: XCTestCase {
                 ),
             ]
         )
-        XCTAssertEqual(presentation.items.count, 5)
+        XCTAssertEqual(presentation.items.count, 6)
+    }
+
+    func testGlobalShortcutReferenceUsesLocalizedNotSetFallback() {
+        for displayName in [nil, "", "   \n"] as [String?] {
+            let presentation = ShortcutReferencePresentation.standard(
+                globalHotKeyDisplayName: displayName
+            )
+
+            XCTAssertEqual(
+                presentation.items.first,
+                ShortcutReferenceItem(
+                    id: .toggleCodexNotes,
+                    title: L10n.text(.shortcutsItemToggleCodexNotes),
+                    shortcut: L10n.text(.globalHotKeyNotSet)
+                )
+            )
+        }
+    }
+
+    func testGlobalShortcutReferenceRebuildsWithCurrentDisplayName() {
+        let original = ShortcutReferencePresentation.standard(
+            globalHotKeyDisplayName: "⌃⇧Space"
+        )
+        let changed = ShortcutReferencePresentation.standard(
+            globalHotKeyDisplayName: "⌃⌥N"
+        )
+
+        XCTAssertEqual(original.items.first?.shortcut, "⌃⇧Space")
+        XCTAssertEqual(changed.items.first?.shortcut, "⌃⌥N")
+        XCTAssertEqual(
+            Array(original.items.dropFirst()),
+            Array(changed.items.dropFirst())
+        )
     }
 
     func testReferenceRowsArePureValuesWithoutActionsOrDisabledState() {

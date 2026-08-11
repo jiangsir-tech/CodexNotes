@@ -28,6 +28,9 @@ let package = Package(
             dependencies: ["CodexNotesCore"],
             resources: [
                 .process("Resources")
+            ],
+            linkerSettings: [
+                .linkedFramework("Carbon")
             ]
         ),
         .executableTarget(

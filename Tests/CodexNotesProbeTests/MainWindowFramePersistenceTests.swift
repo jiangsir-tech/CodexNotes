@@ -253,6 +253,58 @@ final class MainWindowFramePersistenceTests: XCTestCase {
         }
     }
 
+    func testAdaptiveInitialSizePersistsWhenRelaunchingOnASmallerDisplay() {
+        withDefaults { defaults in
+            let firstWindow = makeWindow(
+                frame: testFrame(xOffset: 20, yOffset: 20)
+            )
+            defer { firstWindow.orderOut(nil) }
+            var firstPlacementCount = 0
+
+            MainWindowFramePersistence.configure(
+                window: firstWindow,
+                defaults: defaults
+            ) {
+                firstPlacementCount += 1
+                let size = MainWindowInitialPlacementPolicy.preferredSize(
+                    forVisibleFrameSize: CGSize(width: 2_560, height: 1_409)
+                )
+                firstWindow.setFrame(
+                    NSRect(origin: firstWindow.frame.origin, size: size),
+                    display: false
+                )
+            }
+
+            XCTAssertEqual(firstPlacementCount, 1)
+            XCTAssertEqual(firstWindow.frame.size, NSSize(width: 548, height: 725))
+
+            let relaunchedWindow = makeWindow(
+                frame: testFrame(xOffset: 40, yOffset: 40)
+            )
+            defer { relaunchedWindow.orderOut(nil) }
+            var relaunchPlacementCount = 0
+            MainWindowFramePersistence.configure(
+                window: relaunchedWindow,
+                defaults: defaults
+            ) {
+                relaunchPlacementCount += 1
+                let size = MainWindowInitialPlacementPolicy.preferredSize(
+                    forVisibleFrameSize: CGSize(width: 1_440, height: 875)
+                )
+                relaunchedWindow.setFrame(
+                    NSRect(origin: relaunchedWindow.frame.origin, size: size),
+                    display: false
+                )
+            }
+
+            XCTAssertEqual(relaunchPlacementCount, 0)
+            XCTAssertEqual(
+                relaunchedWindow.frame.size,
+                NSSize(width: 548, height: 725)
+            )
+        }
+    }
+
     func testConfiguredWindowContinuesAutosavingMoveAndResize() {
         withStandardFrameDefaults { _ in
             let window = makeWindow(
