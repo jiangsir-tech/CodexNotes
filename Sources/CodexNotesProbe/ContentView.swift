@@ -4,6 +4,8 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var model: ProbeViewModel
+    @ObservedObject var updateCoordinator: UpdateCheckCoordinator
+    @ObservedObject var globalHotKeyController: GlobalHotKeyController
     let languagePreference: AppLanguagePreference
     @StateObject private var editorController = MarkdownEditorController()
     @Environment(\.colorScheme) private var inheritedColorScheme
@@ -32,10 +34,18 @@ struct ContentView: View {
         "\(languagePreference.rawValue):\(resolvedLanguage.rawValue)"
     }
 
+    private var globalHotKeyDisplayName: String? {
+        guard globalHotKeyController.currentShortcut != nil else { return nil }
+        return globalHotKeyController.displayName
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 scopeSelector
+                if let update = updateCoordinator.bannerUpdate {
+                    appUpdateBanner(update)
+                }
                 if case let .unavailable(message) = model.state {
                     connectionIssueBanner(message)
                 }
@@ -154,6 +164,70 @@ struct ContentView: View {
         .padding(.vertical, 8)
         .background(palette.panelBackground.color)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func appUpdateBanner(_ update: AvailableAppUpdate) -> some View {
+        let presentation = AppUpdateBannerPresentation(update)
+
+        return ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 8) {
+                appUpdateBannerTitle(presentation)
+                Spacer(minLength: 4)
+                appUpdateBannerActions(update, presentation: presentation)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                appUpdateBannerTitle(presentation)
+                appUpdateBannerActions(update, presentation: presentation)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+        .font(.caption)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            palette.panelBackground.color.opacity(0.97),
+            in: RoundedRectangle(cornerRadius: 9)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 9)
+                .stroke(palette.accent.color.opacity(0.45), lineWidth: 0.8)
+        )
+        .accessibilityElement(children: .contain)
+    }
+
+    private func appUpdateBannerTitle(
+        _ presentation: AppUpdateBannerPresentation
+    ) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: "arrow.down.circle.fill")
+                .foregroundStyle(palette.accent.color)
+                .accessibilityHidden(true)
+            Text(presentation.title)
+                .fontWeight(.medium)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func appUpdateBannerActions(
+        _ update: AvailableAppUpdate,
+        presentation: AppUpdateBannerPresentation
+    ) -> some View {
+        HStack(spacing: 10) {
+            Button(presentation.viewTitle) {
+                updateCoordinator.dismissBanner()
+                NSWorkspace.shared.open(update.url)
+            }
+            .buttonStyle(.link)
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityHint(Text(presentation.viewAccessibilityHint))
+
+            Button(presentation.laterTitle) {
+                updateCoordinator.dismissBanner()
+            }
+            .buttonStyle(.link)
+            .fixedSize(horizontal: true, vertical: false)
+        }
     }
 
     private var scopeSelector: some View {
@@ -691,10 +765,22 @@ struct ContentView: View {
     }
 
     private var settingsButton: some View {
-        let presentation = BottomBarActionPresentation.settings
+        let availableVersion = updateCoordinator.availableUpdate?.version
+        let presentation = BottomBarActionPresentation.settings(
+            updateVersion: availableVersion
+        )
 
         return SettingsLink {
-            BottomBarActionLabel(presentation: presentation)
+            ZStack(alignment: .topTrailing) {
+                BottomBarActionLabel(presentation: presentation)
+                if availableVersion != nil {
+                    Circle()
+                        .fill(palette.accent.color)
+                        .frame(width: 6, height: 6)
+                        .padding(4)
+                        .accessibilityHidden(true)
+                }
+            }
         }
         .buttonStyle(.borderless)
         .foregroundStyle(palette.secondaryText.color)
@@ -793,14 +879,15 @@ struct ContentView: View {
         )
         .help(presentation.helpText)
         .accessibilityLabel(Text(presentation.accessibilityLabel))
-        .focusable(false)
         .popover(
             isPresented: $isShortcutReferencePresented,
             attachmentAnchor: .rect(.bounds),
             arrowEdge: .bottom
         ) {
             ShortcutReferencePanel(
-                presentation: .standard,
+                presentation: .standard(
+                    globalHotKeyDisplayName: globalHotKeyDisplayName
+                ),
                 palette: palette,
                 languageRevision: languageRevision
             )
@@ -1374,7 +1461,19 @@ struct BottomBarActionPresentation: Equatable {
     }
 
     static var settings: BottomBarActionPresentation {
-        let label = L10n.text(.bottomBarSettingsHelp)
+        settings(updateVersion: nil)
+    }
+
+    static func settings(updateVersion: String?) -> BottomBarActionPresentation {
+        let label: String
+        if let updateVersion {
+            label = L10n.text(
+                .bottomBarSettingsUpdateAvailableHelp,
+                replacements: ["version": updateVersion]
+            )
+        } else {
+            label = L10n.text(.bottomBarSettingsHelp)
+        }
         return BottomBarActionPresentation(
             systemImage: "gearshape",
             helpText: label,
@@ -1383,8 +1482,26 @@ struct BottomBarActionPresentation: Equatable {
     }
 }
 
+struct AppUpdateBannerPresentation: Equatable {
+    let title: String
+    let viewTitle: String
+    let laterTitle: String
+    let viewAccessibilityHint: String
+
+    init(_ update: AvailableAppUpdate) {
+        title = L10n.text(
+            .appUpdateBannerAvailable,
+            replacements: ["version": update.version]
+        )
+        viewTitle = L10n.text(.settingsAboutViewUpdate)
+        laterTitle = L10n.text(.appUpdateBannerLater)
+        viewAccessibilityHint = L10n.text(.settingsAboutViewUpdateAccessibilityHint)
+    }
+}
+
 struct ShortcutReferenceItem: Equatable, Identifiable {
     enum ID: String {
+        case toggleCodexNotes
         case cycleTodo
         case taskNote
         case projectNote
@@ -1400,6 +1517,7 @@ struct ShortcutReferenceItem: Equatable, Identifiable {
 struct ShortcutReferenceSection: Equatable, Identifiable {
     let title: String
     let items: [ShortcutReferenceItem]
+    var note: String? = nil
 
     var id: String { title }
 }
@@ -1415,9 +1533,32 @@ struct ShortcutReferencePresentation: Equatable {
     var isInteractive: Bool { false }
 
     static var standard: ShortcutReferencePresentation {
-        ShortcutReferencePresentation(
+        standard(globalHotKeyDisplayName: nil)
+    }
+
+    static func standard(
+        globalHotKeyDisplayName: String?
+    ) -> ShortcutReferencePresentation {
+        let normalizedGlobalHotKeyDisplayName = globalHotKeyDisplayName?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayedGlobalHotKey = normalizedGlobalHotKeyDisplayName.flatMap {
+            $0.isEmpty ? nil : $0
+        } ?? L10n.text(.globalHotKeyNotSet)
+
+        return ShortcutReferencePresentation(
             title: L10n.text(.shortcutsTitle),
             sections: [
+                ShortcutReferenceSection(
+                    title: L10n.text(.shortcutsSectionGlobal),
+                    items: [
+                        ShortcutReferenceItem(
+                            id: .toggleCodexNotes,
+                            title: L10n.text(.shortcutsItemToggleCodexNotes),
+                            shortcut: displayedGlobalHotKey
+                        )
+                    ],
+                    note: L10n.text(.shortcutsGlobalAvailabilityNote)
+                ),
                 ShortcutReferenceSection(
                     title: L10n.text(.shortcutsSectionTodos),
                     items: [
@@ -1620,6 +1761,14 @@ struct ShortcutReferencePanel: View {
                             )
                         )
                     )
+                }
+
+                if let note = section.note {
+                    Text(note)
+                        .font(.system(size: 10))
+                        .foregroundStyle(palette.tertiaryText.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 2)
                 }
             }
 
@@ -1969,10 +2118,12 @@ struct WindowConfigurator: NSViewRepresentable {
 
         private func toggleFromStatusItem() {
             guard let window else { return }
+            let settingsVisible = visibleSettingsWindow != nil
             let action = MainWindowTogglePolicy.action(
                 isApplicationHidden: NSApp.isHidden,
                 isWindowVisible: window.isVisible,
-                isWindowMiniaturized: window.isMiniaturized
+                isWindowMiniaturized: window.isMiniaturized,
+                isSettingsVisible: settingsVisible
             )
             switch action {
             case .show:
@@ -2132,11 +2283,15 @@ struct WindowConfigurator: NSViewRepresentable {
         }
 
         private func closeSettingsWindowIfNeeded() {
-            guard isSettingsVisible else { return }
-            NSApp.windows
-                .first(where: { $0.identifier == CodexNotesWindowIdentifier.settings })?
-                .performClose(nil)
+            visibleSettingsWindow?.performClose(nil)
             isSettingsVisible = false
+        }
+
+        private var visibleSettingsWindow: NSWindow? {
+            NSApp.windows.first {
+                $0.identifier == CodexNotesWindowIdentifier.settings
+                    && $0.isVisible
+            }
         }
 
         private func settingsVisibilityDidChange(_ isVisible: Bool) {
@@ -2175,6 +2330,7 @@ struct WindowConfigurator: NSViewRepresentable {
 
         private func updateVisibility(frontmostApplication: NSRunningApplication?) {
             guard let window else { return }
+            isSettingsVisible = visibleSettingsWindow != nil
             let frontmostBundleIdentifier = frontmostApplication?.bundleIdentifier
             let companionBundleIdentifier = Bundle.main.bundleIdentifier
             let automaticVisibilityAllowed = CompanionVisibilityPolicy.shouldShow(
@@ -2271,35 +2427,67 @@ struct WindowConfigurator: NSViewRepresentable {
     }
 
     private func placeBesideCodex(window: NSWindow) {
-        guard let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-            as? [[String: Any]],
-              let codexWindow = info.first(where: { item in
-                  guard let owner = item[kCGWindowOwnerName as String] as? String,
-                        let layer = item[kCGWindowLayer as String] as? Int
-                  else { return false }
-                  return layer == 0 && (owner == "ChatGPT" || owner == "Codex")
-              }),
-              let boundsDictionary = codexWindow[kCGWindowBounds as String] as? NSDictionary,
-              let bounds = CGRect(dictionaryRepresentation: boundsDictionary)
-        else { return }
-
-        let screenFrame = NSScreen.screens
-            .first(where: { $0.frame.intersects(bounds) })?
-            .visibleFrame ?? NSScreen.main?.visibleFrame
-        guard let screenFrame else { return }
-
-        let gap: CGFloat = 8
-        let rightX = bounds.maxX + gap
-        let leftX = bounds.minX - window.frame.width - gap
-        let x: CGFloat
-        if rightX + window.frame.width <= screenFrame.maxX {
-            x = rightX
-        } else if leftX >= screenFrame.minX {
-            x = leftX
-        } else {
-            x = max(screenFrame.minX, bounds.maxX - window.frame.width - gap)
+        let displays = NSScreen.screens.compactMap(displayGeometry(for:))
+        let quartzBounds = frontmostCodexWindowBounds()
+        let codexDisplay = quartzBounds.flatMap {
+            MainWindowInitialPlacementPolicy.display(
+                containingQuartzBounds: $0,
+                among: displays
+            )
         }
-        let y = min(max(bounds.maxY - window.frame.height, screenFrame.minY), screenFrame.maxY - window.frame.height)
-        window.setFrameOrigin(NSPoint(x: x, y: y))
+        let targetDisplay = codexDisplay
+            ?? window.screen.flatMap(displayGeometry(for:))
+            ?? NSScreen.main.flatMap(displayGeometry(for:))
+            ?? displays.first
+        guard let targetDisplay else { return }
+
+        let codexFrame: NSRect? = quartzBounds.flatMap { bounds -> NSRect? in
+            guard codexDisplay == targetDisplay else { return nil }
+            return MainWindowInitialPlacementPolicy.appKitFrame(
+                forQuartzBounds: bounds,
+                on: targetDisplay
+            )
+        }
+        window.setFrame(
+            MainWindowInitialPlacementPolicy.initialFrame(
+                in: targetDisplay.visibleFrame,
+                codexFrame: codexFrame
+            ),
+            display: false
+        )
+    }
+
+    private func frontmostCodexWindowBounds() -> CGRect? {
+        let codexProcessIdentifiers = Set(
+            NSRunningApplication.runningApplications(
+                withBundleIdentifier: CompanionVisibilityPolicy.codexBundleIdentifier
+            ).map(\.processIdentifier)
+        )
+        guard !codexProcessIdentifiers.isEmpty else { return nil }
+        guard let info = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else { return nil }
+        return info.lazy.compactMap { item -> CGRect? in
+            guard let ownerPID = item[kCGWindowOwnerPID as String] as? NSNumber,
+                  codexProcessIdentifiers.contains(ownerPID.int32Value),
+                  let layer = item[kCGWindowLayer as String] as? Int,
+                  layer == 0,
+                  let dictionary = item[kCGWindowBounds as String] as? NSDictionary
+            else { return nil }
+            return CGRect(dictionaryRepresentation: dictionary)
+        }.first
+    }
+
+    private func displayGeometry(for screen: NSScreen) -> MainWindowDisplayGeometry? {
+        let screenNumberKey = NSDeviceDescriptionKey("NSScreenNumber")
+        guard let screenNumber = screen.deviceDescription[screenNumberKey]
+            as? NSNumber else { return nil }
+        let displayID = CGDirectDisplayID(screenNumber.uint32Value)
+        return MainWindowDisplayGeometry(
+            appKitFrame: screen.frame,
+            visibleFrame: screen.visibleFrame,
+            quartzFrame: CGDisplayBounds(displayID)
+        )
     }
 }

@@ -52,6 +52,16 @@ final class StatusItemControllerTests: XCTestCase {
         )
     }
 
+    func testVisibleSettingsAlwaysSwitchesBackToMainWindow() {
+        XCTAssertEqual(
+            action(
+                isWindowVisible: true,
+                isSettingsVisible: true
+            ),
+            .show
+        )
+    }
+
     func testManualHideOverridesAutomaticVisibilityUntilShowResumesFollowing() {
         var state = MainWindowVisibilityState()
         XCTAssertEqual(state.preference, .automatic)
@@ -368,12 +378,14 @@ final class StatusItemControllerTests: XCTestCase {
     private func action(
         isApplicationHidden: Bool = false,
         isWindowVisible: Bool,
-        isWindowMiniaturized: Bool = false
+        isWindowMiniaturized: Bool = false,
+        isSettingsVisible: Bool = false
     ) -> MainWindowToggleAction {
         MainWindowTogglePolicy.action(
             isApplicationHidden: isApplicationHidden,
             isWindowVisible: isWindowVisible,
-            isWindowMiniaturized: isWindowMiniaturized
+            isWindowMiniaturized: isWindowMiniaturized,
+            isSettingsVisible: isSettingsVisible
         )
     }
 }

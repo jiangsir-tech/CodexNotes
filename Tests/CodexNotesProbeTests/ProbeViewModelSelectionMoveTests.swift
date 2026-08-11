@@ -121,11 +121,13 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
         XCTAssertEqual(harness.model.selectionMoveNotice?.canViewDestination, false)
     }
 
-    func testMoveNoticeAutoDismissesInBothDirectionsAndClearsPendingActions() async throws {
+    func testMoveNoticeAutoDismissesInBothDirectionsAndClearsPendingActions() throws {
+        let taskToProjectScheduler = SelectionMoveNoticeTestScheduler()
         let taskToProject = try makeHarness(
             taskText: "移到项目",
             projectText: "项目正文",
-            selectionMoveNoticeDuration: .milliseconds(80)
+            selectionMoveNoticeDuration: .milliseconds(80),
+            selectionMoveNoticeScheduler: taskToProjectScheduler.schedule
         )
         defer { taskToProject.removeTemporaryFiles() }
 
@@ -133,15 +135,20 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
         XCTAssertNotNil(move(taskSnapshot, in: taskToProject.model, to: .project))
         XCTAssertNotNil(taskToProject.model.selectionMoveNotice)
 
-        try await waitUntil { taskToProject.model.selectionMoveNotice == nil }
+        taskToProjectScheduler.advance(by: .milliseconds(79))
+        XCTAssertNotNil(taskToProject.model.selectionMoveNotice)
+        taskToProjectScheduler.advance(by: .milliseconds(1))
+        XCTAssertNil(taskToProject.model.selectionMoveNotice)
 
         XCTAssertNil(taskToProject.model.viewSelectionMoveDestination())
         XCTAssertNil(taskToProject.model.undoLastSelectionMove())
 
+        let projectToTaskScheduler = SelectionMoveNoticeTestScheduler()
         let projectToTask = try makeHarness(
             taskText: "任务正文",
             projectText: "移到任务",
-            selectionMoveNoticeDuration: .milliseconds(80)
+            selectionMoveNoticeDuration: .milliseconds(80),
+            selectionMoveNoticeScheduler: projectToTaskScheduler.schedule
         )
         defer { projectToTask.removeTemporaryFiles() }
         projectToTask.model.selectScope(.project)
@@ -150,44 +157,62 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
         XCTAssertNotNil(move(projectSnapshot, in: projectToTask.model, to: .task))
         XCTAssertEqual(projectToTask.model.selectionMoveNotice?.destinationScope, .task)
 
-        try await waitUntil { projectToTask.model.selectionMoveNotice == nil }
+        projectToTaskScheduler.advance(by: .milliseconds(79))
+        XCTAssertNotNil(projectToTask.model.selectionMoveNotice)
+        projectToTaskScheduler.advance(by: .milliseconds(1))
+        XCTAssertNil(projectToTask.model.selectionMoveNotice)
 
         XCTAssertNil(projectToTask.model.viewSelectionMoveDestination())
         XCTAssertNil(projectToTask.model.undoLastSelectionMove())
     }
 
-    func testNewMoveRestartsNoticeDeadlineAndOldTaskCannotDismissSameNotice() async throws {
+    func testNewMoveRestartsNoticeDeadlineAndOldTaskCannotDismissSameNotice() throws {
+        let scheduler = SelectionMoveNoticeTestScheduler()
         let harness = try makeHarness(
             taskText: "第一次\n第二次",
             projectText: "项目正文",
-            selectionMoveNoticeDuration: .milliseconds(400)
+            selectionMoveNoticeDuration: .milliseconds(400),
+            selectionMoveNoticeScheduler: scheduler.schedule
         )
         defer { harness.removeTemporaryFiles() }
 
         let firstSnapshot = try snapshot(in: harness.model, selecting: "第一次")
         XCTAssertNotNil(move(firstSnapshot, in: harness.model, to: .project))
-        try await Task.sleep(for: .milliseconds(300))
+        let firstNoticeID = try XCTUnwrap(harness.model.selectionMoveNotice?.id)
+        scheduler.advance(by: .milliseconds(300))
 
         let secondSnapshot = try snapshot(in: harness.model, selecting: "第二次")
         XCTAssertNotNil(move(secondSnapshot, in: harness.model, to: .project))
+        let secondNoticeID = try XCTUnwrap(harness.model.selectionMoveNotice?.id)
+        XCTAssertNotEqual(secondNoticeID, firstNoticeID)
+        XCTAssertEqual(
+            scheduler.scheduledDelays,
+            [.milliseconds(400), .milliseconds(400)]
+        )
 
         // Cross the first move's original deadline while remaining well inside
         // the second move's full display duration. Both notices intentionally
         // have the same value, so identity must come from the scheduled request.
-        try await Task.sleep(for: .milliseconds(160))
+        scheduler.advance(by: .milliseconds(160))
+        XCTAssertEqual(harness.model.selectionMoveNotice?.id, secondNoticeID)
         XCTAssertEqual(harness.model.selectionMoveNotice?.destinationScope, .project)
         XCTAssertEqual(harness.model.selectionMoveNotice?.destinationName, "Project A")
         XCTAssertEqual(harness.model.selectionMoveNotice?.canUndo, true)
 
-        try await waitUntil { harness.model.selectionMoveNotice == nil }
+        scheduler.advance(by: .milliseconds(239))
+        XCTAssertEqual(harness.model.selectionMoveNotice?.id, secondNoticeID)
+        scheduler.advance(by: .milliseconds(1))
+        XCTAssertNil(harness.model.selectionMoveNotice)
         XCTAssertNil(harness.model.undoLastSelectionMove())
     }
 
-    func testNewNoticeResetsOldHoverAndIgnoresStaleHoverEnter() async throws {
+    func testNewNoticeResetsOldHoverAndIgnoresStaleHoverEnter() throws {
+        let scheduler = SelectionMoveNoticeTestScheduler()
         let harness = try makeHarness(
             taskText: "第一次\n第二次",
             projectText: "项目正文",
-            selectionMoveNoticeDuration: .milliseconds(120)
+            selectionMoveNoticeDuration: .milliseconds(120),
+            selectionMoveNoticeScheduler: scheduler.schedule
         )
         defer { harness.removeTemporaryFiles() }
 
@@ -195,6 +220,8 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
         XCTAssertNotNil(move(firstSnapshot, in: harness.model, to: .project))
         let oldNoticeID = try XCTUnwrap(harness.model.selectionMoveNotice?.id)
         harness.model.setSelectionMoveNoticeHovered(true, for: oldNoticeID)
+        XCTAssertEqual(scheduler.pendingActionCount, 0)
+        scheduler.advance(by: .milliseconds(60))
 
         let secondSnapshot = try snapshot(in: harness.model, selecting: "第二次")
         XCTAssertNotNil(move(secondSnapshot, in: harness.model, to: .project))
@@ -204,14 +231,22 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
         // A new notice must clear the previous banner's hover state, and a late
         // mouse-enter callback from that old banner must not pause the new one.
         harness.model.setSelectionMoveNoticeHovered(true, for: oldNoticeID)
-        try await waitUntil { harness.model.selectionMoveNotice == nil }
+        XCTAssertEqual(scheduler.pendingActionCount, 1)
+        scheduler.advance(by: .milliseconds(60))
+        XCTAssertEqual(harness.model.selectionMoveNotice?.id, newNoticeID)
+        scheduler.advance(by: .milliseconds(59))
+        XCTAssertEqual(harness.model.selectionMoveNotice?.id, newNoticeID)
+        scheduler.advance(by: .milliseconds(1))
+        XCTAssertNil(harness.model.selectionMoveNotice)
     }
 
-    func testStaleHoverExitCannotResumeCurrentPausedNotice() async throws {
+    func testStaleHoverExitCannotResumeCurrentPausedNotice() throws {
+        let scheduler = SelectionMoveNoticeTestScheduler()
         let harness = try makeHarness(
             taskText: "第一次\n第二次",
             projectText: "项目正文",
-            selectionMoveNoticeDuration: .milliseconds(120)
+            selectionMoveNoticeDuration: .milliseconds(120),
+            selectionMoveNoticeScheduler: scheduler.schedule
         )
         defer { harness.removeTemporaryFiles() }
 
@@ -227,50 +262,66 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
         // SwiftUI may deliver the removed old banner's mouse-exit/onDisappear
         // after the replacement is visible. Its ID must not restart the timer.
         harness.model.setSelectionMoveNoticeHovered(false, for: oldNoticeID)
-        try await Task.sleep(for: .milliseconds(180))
+        XCTAssertEqual(scheduler.pendingActionCount, 0)
+        scheduler.advance(by: .seconds(1))
         XCTAssertEqual(harness.model.selectionMoveNotice?.id, newNoticeID)
 
         harness.model.setSelectionMoveNoticeHovered(false, for: newNoticeID)
-        try await waitUntil { harness.model.selectionMoveNotice == nil }
+        XCTAssertEqual(scheduler.scheduledDelays.count, 3)
+        XCTAssertEqual(scheduler.scheduledDelays.last, .milliseconds(120))
+        scheduler.advance(by: .milliseconds(119))
+        XCTAssertEqual(harness.model.selectionMoveNotice?.id, newNoticeID)
+        scheduler.advance(by: .milliseconds(1))
+        XCTAssertNil(harness.model.selectionMoveNotice)
     }
 
-    func testHoverPausesNoticeAndLeavingRestartsFullDuration() async throws {
+    func testHoverPausesNoticeAndLeavingRestartsFullDuration() throws {
+        let scheduler = SelectionMoveNoticeTestScheduler()
         let harness = try makeHarness(
             taskText: "悬停测试",
             projectText: "项目正文",
-            selectionMoveNoticeDuration: .milliseconds(180)
+            selectionMoveNoticeDuration: .milliseconds(180),
+            selectionMoveNoticeScheduler: scheduler.schedule
         )
         defer { harness.removeTemporaryFiles() }
 
         let moveSnapshot = try snapshot(in: harness.model, selecting: "悬停测试")
         XCTAssertNotNil(move(moveSnapshot, in: harness.model, to: .project))
         let noticeID = try XCTUnwrap(harness.model.selectionMoveNotice?.id)
-        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(scheduler.scheduledDelays, [.milliseconds(180)])
 
         harness.model.setSelectionMoveNoticeHovered(true, for: noticeID)
-        try await Task.sleep(for: .milliseconds(250))
+        scheduler.advance(by: .seconds(1))
         XCTAssertNotNil(harness.model.selectionMoveNotice)
         XCTAssertEqual(harness.model.selectionMoveNotice?.canUndo, true)
 
         harness.model.setSelectionMoveNoticeHovered(false, for: noticeID)
-        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(
+            scheduler.scheduledDelays,
+            [.milliseconds(180), .milliseconds(180)]
+        )
+        scheduler.advance(by: .milliseconds(179))
         XCTAssertNotNil(harness.model.selectionMoveNotice)
 
-        try await waitUntil { harness.model.selectionMoveNotice == nil }
+        scheduler.advance(by: .milliseconds(1))
+        XCTAssertNil(harness.model.selectionMoveNotice)
         XCTAssertNil(harness.model.undoLastSelectionMove())
     }
 
-    func testViewingDestinationRestartsNoticeAndKeepsUndoAvailable() async throws {
+    func testViewingDestinationRestartsNoticeAndKeepsUndoAvailable() throws {
+        let scheduler = SelectionMoveNoticeTestScheduler()
         let harness = try makeHarness(
             taskText: "查看后仍可撤销",
             projectText: "项目正文",
-            selectionMoveNoticeDuration: .milliseconds(400)
+            selectionMoveNoticeDuration: .milliseconds(400),
+            selectionMoveNoticeScheduler: scheduler.schedule
         )
         defer { harness.removeTemporaryFiles() }
 
         let moveSnapshot = try snapshot(in: harness.model, selecting: "查看后仍可撤销")
         let result = try XCTUnwrap(move(moveSnapshot, in: harness.model, to: .project))
-        try await Task.sleep(for: .milliseconds(300))
+        let noticeID = try XCTUnwrap(harness.model.selectionMoveNotice?.id)
+        scheduler.advance(by: .milliseconds(300))
 
         XCTAssertEqual(
             harness.model.viewSelectionMoveDestination(),
@@ -278,70 +329,84 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
         )
         XCTAssertEqual(harness.model.selectionMoveNotice?.canViewDestination, false)
         XCTAssertEqual(harness.model.selectionMoveNotice?.canUndo, true)
+        XCTAssertEqual(
+            scheduler.scheduledDelays,
+            [.milliseconds(400), .milliseconds(400)]
+        )
 
-        try await Task.sleep(for: .milliseconds(160))
-        XCTAssertNotNil(harness.model.selectionMoveNotice)
+        scheduler.advance(by: .milliseconds(160))
+        XCTAssertEqual(harness.model.selectionMoveNotice?.id, noticeID)
         XCTAssertEqual(harness.model.undoLastSelectionMove(), result)
         XCTAssertNil(harness.model.selectionMoveNotice)
     }
 
-    func testManualDismissCancelsOldTaskWithoutHarmingNextNotice() async throws {
+    func testManualDismissCancelsOldTaskWithoutHarmingNextNotice() throws {
+        let scheduler = SelectionMoveNoticeTestScheduler()
         let harness = try makeHarness(
             taskText: "第一次\n第二次",
             projectText: "项目正文",
-            selectionMoveNoticeDuration: .milliseconds(400)
+            selectionMoveNoticeDuration: .milliseconds(400),
+            selectionMoveNoticeScheduler: scheduler.schedule
         )
         defer { harness.removeTemporaryFiles() }
 
         let firstSnapshot = try snapshot(in: harness.model, selecting: "第一次")
         XCTAssertNotNil(move(firstSnapshot, in: harness.model, to: .project))
-        try await Task.sleep(for: .milliseconds(300))
+        scheduler.advance(by: .milliseconds(300))
         harness.model.dismissSelectionMoveNotice()
         XCTAssertNil(harness.model.selectionMoveNotice)
+        XCTAssertEqual(scheduler.pendingActionCount, 0)
 
         let secondSnapshot = try snapshot(in: harness.model, selecting: "第二次")
         XCTAssertNotNil(move(secondSnapshot, in: harness.model, to: .project))
-        try await Task.sleep(for: .milliseconds(160))
+        let secondNoticeID = try XCTUnwrap(harness.model.selectionMoveNotice?.id)
+        scheduler.advance(by: .milliseconds(160))
 
-        XCTAssertNotNil(harness.model.selectionMoveNotice)
+        XCTAssertEqual(harness.model.selectionMoveNotice?.id, secondNoticeID)
         XCTAssertEqual(harness.model.selectionMoveNotice?.canUndo, true)
         harness.model.dismissSelectionMoveNotice()
     }
 
-    func testUndoCancelsOldTaskWithoutHarmingNextNotice() async throws {
+    func testUndoCancelsOldTaskWithoutHarmingNextNotice() throws {
+        let scheduler = SelectionMoveNoticeTestScheduler()
         let harness = try makeHarness(
             taskText: "第一次\n第二次",
             projectText: "项目正文",
-            selectionMoveNoticeDuration: .seconds(2)
+            selectionMoveNoticeDuration: .seconds(2),
+            selectionMoveNoticeScheduler: scheduler.schedule
         )
         defer { harness.removeTemporaryFiles() }
 
         let firstSnapshot = try snapshot(in: harness.model, selecting: "第一次")
         let firstResult = try XCTUnwrap(move(firstSnapshot, in: harness.model, to: .project))
-        try await Task.sleep(for: .seconds(1))
+        scheduler.advance(by: .seconds(1))
         XCTAssertEqual(harness.model.undoLastSelectionMove(), firstResult)
         XCTAssertNil(harness.model.selectionMoveNotice)
+        XCTAssertEqual(scheduler.pendingActionCount, 0)
 
         let secondSnapshot = try snapshot(in: harness.model, selecting: "第二次")
         XCTAssertNotNil(move(secondSnapshot, in: harness.model, to: .project))
-        try await Task.sleep(for: .milliseconds(1_500))
+        let secondNoticeID = try XCTUnwrap(harness.model.selectionMoveNotice?.id)
+        scheduler.advance(by: .milliseconds(1_500))
 
-        XCTAssertNotNil(harness.model.selectionMoveNotice)
+        XCTAssertEqual(harness.model.selectionMoveNotice?.id, secondNoticeID)
         XCTAssertEqual(harness.model.selectionMoveNotice?.canUndo, true)
         harness.model.dismissSelectionMoveNotice()
     }
 
-    func testIdentityChangeCancelsOldTaskWithoutHarmingNewIdentityNotice() async throws {
+    func testIdentityChangeCancelsOldTaskWithoutHarmingNewIdentityNotice() throws {
+        let scheduler = SelectionMoveNoticeTestScheduler()
         let harness = try makeHarness(
             taskText: "任务 A 的移动",
             projectText: "Project A 正文",
-            selectionMoveNoticeDuration: .milliseconds(400)
+            selectionMoveNoticeDuration: .milliseconds(400),
+            selectionMoveNoticeScheduler: scheduler.schedule
         )
         defer { harness.removeTemporaryFiles() }
 
         let firstSnapshot = try snapshot(in: harness.model, selecting: "任务 A 的移动")
         XCTAssertNotNil(move(firstSnapshot, in: harness.model, to: .project))
-        try await Task.sleep(for: .milliseconds(300))
+        scheduler.advance(by: .milliseconds(300))
 
         let selectionB = makeSelection(id: "thread-b")
         harness.provider.set(
@@ -354,12 +419,15 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
         )
         harness.model.apply(selectionB, recordLatency: false)
         XCTAssertNil(harness.model.selectionMoveNotice)
+        XCTAssertEqual(scheduler.pendingActionCount, 0)
 
         harness.model.noteText = "任务 B 的移动"
         let secondSnapshot = try snapshot(in: harness.model, selecting: "任务 B 的移动")
         XCTAssertNotNil(move(secondSnapshot, in: harness.model, to: .project))
-        try await Task.sleep(for: .milliseconds(160))
+        let secondNoticeID = try XCTUnwrap(harness.model.selectionMoveNotice?.id)
+        scheduler.advance(by: .milliseconds(160))
 
+        XCTAssertEqual(harness.model.selectionMoveNotice?.id, secondNoticeID)
         XCTAssertEqual(harness.model.selectionMoveNotice?.destinationScope, .project)
         XCTAssertEqual(harness.model.selectionMoveNotice?.destinationName, "Project B")
         XCTAssertEqual(harness.model.selectionMoveNotice?.canUndo, true)
@@ -722,7 +790,8 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
     private func makeHarness(
         taskText: String,
         projectText: String,
-        selectionMoveNoticeDuration: Duration = .seconds(8)
+        selectionMoveNoticeDuration: Duration = .seconds(8),
+        selectionMoveNoticeScheduler: ProbeViewModel.SelectionMoveNoticeScheduler? = nil
     ) throws -> SelectionMoveHarness {
         let root = temporaryNoteRoot()
         let selection = makeSelection()
@@ -742,7 +811,8 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
             noteStore: store,
             metadataProvider: provider,
             metadataRefreshInterval: .zero,
-            selectionMoveNoticeDuration: selectionMoveNoticeDuration
+            selectionMoveNoticeDuration: selectionMoveNoticeDuration,
+            selectionMoveNoticeScheduler: selectionMoveNoticeScheduler
         )
         model.apply(selection, recordLatency: false)
         return SelectionMoveHarness(
@@ -824,6 +894,48 @@ final class ProbeViewModelSelectionMoveTests: XCTestCase {
             hostID: nil,
             stableKey: "local:\(id)"
         )
+    }
+}
+
+@MainActor
+private final class SelectionMoveNoticeTestScheduler {
+    private final class Token {
+        var isCancelled = false
+    }
+
+    private struct Entry {
+        let deadline: Duration
+        let token: Token
+        let action: ProbeViewModel.SelectionMoveNoticeScheduledAction
+    }
+
+    private var now: Duration = .zero
+    private var entries: [Entry] = []
+    private(set) var scheduledDelays: [Duration] = []
+
+    var pendingActionCount: Int {
+        entries.filter { !$0.token.isCancelled }.count
+    }
+
+    func schedule(
+        after delay: Duration,
+        action: @escaping ProbeViewModel.SelectionMoveNoticeScheduledAction
+    ) -> ProbeViewModel.SelectionMoveNoticeDismissalCancellation {
+        let token = Token()
+        entries.append(Entry(deadline: now + delay, token: token, action: action))
+        scheduledDelays.append(delay)
+        return {
+            token.isCancelled = true
+        }
+    }
+
+    func advance(by interval: Duration) {
+        now += interval
+        let dueEntries = entries.filter { $0.deadline <= now }
+        entries.removeAll { $0.deadline <= now }
+        for entry in dueEntries where !entry.token.isCancelled {
+            entry.action()
+        }
     }
 }
 

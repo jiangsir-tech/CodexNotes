@@ -149,12 +149,61 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(english.text(.imageMarkdownAltText), "Image")
         XCTAssertEqual(chinese.text(.settingsEditorTitle), "编辑器")
         XCTAssertEqual(english.text(.settingsEditorTitle), "Editor")
+        XCTAssertEqual(
+            chinese.text(.settingsEditorWindowResizeHint),
+            "拖动笔记窗口边缘可调整大小，尺寸会自动记住。"
+        )
+        XCTAssertEqual(
+            english.text(.settingsEditorWindowResizeHint),
+            "Drag a note window edge to resize. CodexNotes remembers the size."
+        )
         XCTAssertEqual(chinese.text(.settingsGeneralTitle), "通用")
         XCTAssertEqual(english.text(.settingsGeneralTitle), "General")
         XCTAssertEqual(chinese.text(.settingsLanguageTitle), "语言")
         XCTAssertEqual(english.text(.settingsLanguageTitle), "Language")
         XCTAssertEqual(chinese.text(.settingsLaunchAtLoginTitle), "登录时启动")
         XCTAssertEqual(english.text(.settingsLaunchAtLoginTitle), "Launch at Login")
+        XCTAssertEqual(chinese.text(.settingsAboutTitle), "关于 CodexNotes")
+        XCTAssertEqual(english.text(.settingsAboutTitle), "About CodexNotes")
+        XCTAssertEqual(chinese.text(.settingsAboutGitHub), "GitHub 项目")
+        XCTAssertEqual(english.text(.settingsAboutGitHub), "GitHub Project")
+        XCTAssertEqual(chinese.text(.settingsAboutX), "X：关注作者")
+        XCTAssertEqual(english.text(.settingsAboutX), "X: Follow the Author")
+        XCTAssertEqual(chinese.text(.settingsAboutCoffee), "☕ 请江sir喝杯咖啡")
+        XCTAssertEqual(english.text(.settingsAboutCoffee), "☕ Buy Me a Coffee")
+        XCTAssertEqual(chinese.text(.settingsAboutFeedbackEmail), "反馈邮箱")
+        XCTAssertEqual(english.text(.settingsAboutFeedbackEmail), "Feedback")
+        XCTAssertEqual(chinese.text(.settingsAboutCopyEmail), "复制邮箱地址")
+        XCTAssertEqual(english.text(.settingsAboutCopyEmail), "Copy Email Address")
+        XCTAssertEqual(chinese.text(.settingsAboutEmailCopied), "已复制")
+        XCTAssertEqual(english.text(.settingsAboutEmailCopied), "Copied")
+        XCTAssertEqual(chinese.text(.settingsAboutAutomaticCheck), "自动检查更新")
+        XCTAssertEqual(
+            english.text(.settingsAboutAutomaticCheck),
+            "Automatically Check for Updates"
+        )
+        XCTAssertEqual(
+            chinese.text(.settingsAboutAutomaticCheckDescription),
+            "每天检查一次；网络失败会稍后重试，仅发现新版本时提示。"
+        )
+        XCTAssertEqual(
+            english.text(.settingsAboutAutomaticCheckDescription),
+            "Check once a day; retry later after a network failure, and notify only for new versions."
+        )
+        XCTAssertEqual(
+            chinese.text(
+                .appUpdateBannerAvailable,
+                replacements: ["version": "1.5.0"]
+            ),
+            "CodexNotes 1.5.0 现已可用"
+        )
+        XCTAssertEqual(
+            english.text(
+                .appUpdateBannerAvailable,
+                replacements: ["version": "1.5.0"]
+            ),
+            "CodexNotes 1.5.0 is available"
+        )
         XCTAssertEqual(
             chinese.text(.settingsLaunchAtLoginError),
             "无法更改登录启动设置，请重试。"
