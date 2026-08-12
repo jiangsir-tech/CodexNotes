@@ -3429,6 +3429,49 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         }
     }
 
+    func testCheckboxHoverAndExitDoNotOverrideAWindowFrameCursor() throws {
+        let todoHarness = makeHarness(text: "- [ ] 待办", textWidth: 420)
+        let todoTextView = todoHarness.textView
+        todoTextView.layoutManager?.ensureLayout(
+            for: try XCTUnwrap(todoTextView.textContainer)
+        )
+        let checkboxRect = try XCTUnwrap(todoTextView.checkboxCursorRects().first)
+        XCTAssertEqual(todoTextView.checkboxCursorRects().count, 1)
+
+        let ordinaryHarness = makeHarness(text: "普通正文", textWidth: 420)
+        XCTAssertTrue(ordinaryHarness.textView.checkboxCursorRects().isEmpty)
+
+        let previousCursor = NSCursor.current
+        defer { previousCursor.set() }
+        let sentinelCursor = NSCursor.crosshair
+
+        sentinelCursor.set()
+        todoTextView.mouseMoved(
+            with: try mouseMovedEvent(
+                at: NSPoint(x: checkboxRect.midX, y: checkboxRect.midY),
+                in: todoHarness
+            )
+        )
+        XCTAssertTrue(NSCursor.current === sentinelCursor)
+
+        sentinelCursor.set()
+        ordinaryHarness.textView.mouseMoved(
+            with: try mouseMovedEvent(
+                at: NSPoint(x: 200, y: 40),
+                in: ordinaryHarness
+            )
+        )
+        XCTAssertTrue(NSCursor.current === sentinelCursor)
+
+        ordinaryHarness.textView.mouseExited(
+            with: try mouseMovedEvent(
+                at: NSPoint(x: 200, y: 40),
+                in: ordinaryHarness
+            )
+        )
+        XCTAssertTrue(NSCursor.current === sentinelCursor)
+    }
+
     func testFinalLineEOFAndTrailingNewlineKeepNativeSelectionAndCaretGeometry() throws {
         let finalLineText = "上一行\n前选区后"
         let finalSelection = (finalLineText as NSString).range(of: "选区")
@@ -5275,6 +5318,25 @@ final class PlainMarkdownTextViewTests: XCTestCase {
                 eventNumber: 1,
                 clickCount: 1,
                 pressure: 1
+            )
+        )
+    }
+
+    private func mouseMovedEvent(
+        at point: NSPoint,
+        in harness: EditorHarness
+    ) throws -> NSEvent {
+        try XCTUnwrap(
+            NSEvent.mouseEvent(
+                with: .mouseMoved,
+                location: harness.textView.convert(point, to: nil),
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: harness.window.windowNumber,
+                context: nil,
+                eventNumber: 1,
+                clickCount: 0,
+                pressure: 0
             )
         )
     }

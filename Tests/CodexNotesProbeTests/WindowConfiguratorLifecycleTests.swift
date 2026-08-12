@@ -4,6 +4,37 @@ import XCTest
 
 @MainActor
 final class WindowConfiguratorLifecycleTests: XCTestCase {
+    func testMainCoordinatorOwnsExactlyOneFullFrameResizeTracker() throws {
+        let availability = FakeCodexApplicationAvailabilityMonitor(
+            isCodexAvailable: false
+        )
+        let coordinator = WindowConfigurator.Coordinator(
+            codexAvailabilityMonitor: availability
+        )
+        let window = makeMainWindow()
+        let frameView = try XCTUnwrap(window.contentView?.superview)
+        defer { window.orderOut(nil) }
+
+        coordinator.attach(to: window, languageRevision: "test")
+        coordinator.attach(to: window, languageRevision: "test")
+
+        XCTAssertEqual(
+            frameView.trackingAreas.filter {
+                $0.owner is MainWindowResizeCursorController
+            }.count,
+            1
+        )
+        XCTAssertTrue(window.styleMask.contains(.resizable))
+
+        coordinator.detach()
+
+        XCTAssertFalse(
+            frameView.trackingAreas.contains {
+                $0.owner is MainWindowResizeCursorController
+            }
+        )
+    }
+
     func testSettingsVisibilityNotificationDoesNotHideVisibleMainWindow() async {
         await preservingStableFrameDefaults {
             let availability = FakeCodexApplicationAvailabilityMonitor(

@@ -5282,11 +5282,6 @@ final class CheckboxTextView: NSTextView, NSTextStorageDelegate {
             hoveredMarkerLocation = newLocation
             needsDisplay = true
         }
-        if newLocation != nil {
-            NSCursor.pointingHand.set()
-        } else {
-            NSCursor.iBeam.set()
-        }
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -5294,14 +5289,17 @@ final class CheckboxTextView: NSTextView, NSTextStorageDelegate {
             hoveredMarkerLocation = nil
             needsDisplay = true
         }
-        NSCursor.iBeam.set()
     }
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        for geometry in checkboxGeometries() {
-            addCursorRect(geometry.hitRect, cursor: .pointingHand)
+        for rect in checkboxCursorRects() {
+            addCursorRect(rect, cursor: .pointingHand)
         }
+    }
+
+    func checkboxCursorRects() -> [NSRect] {
+        checkboxGeometries().map(\.hitRect)
     }
 
     private func apply(
