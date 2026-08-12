@@ -1,4 +1,36 @@
 import AppKit
+import ObjectiveC.runtime
+
+private enum MainWindowFrameResizeCursorRuntime {
+    typealias Factory = @convention(c) (
+        AnyClass,
+        Selector,
+        UInt,
+        UInt
+    ) -> Unmanaged<NSCursor>
+
+    private static let selector = NSSelectorFromString(
+        "frameResizeCursorFromPosition:inDirections:"
+    )
+    private static let factory: Factory? = {
+        guard let method = class_getClassMethod(NSCursor.self, selector) else {
+            return nil
+        }
+        return unsafeBitCast(
+            method_getImplementation(method),
+            to: Factory.self
+        )
+    }()
+
+    static func cursor(position: UInt) -> NSCursor? {
+        factory?(
+            NSCursor.self,
+            selector,
+            position,
+            3 // inward | outward
+        ).takeUnretainedValue()
+    }
+}
 
 /// The part of a resizable window frame currently under the pointer.
 enum MainWindowResizeCursorRegion: CaseIterable, Equatable {
@@ -73,23 +105,32 @@ enum MainWindowResizeCursorRegion: CaseIterable, Equatable {
         return nil
     }
 
+    var frameResizePosition: UInt {
+        switch self {
+        case .top: 1
+        case .left: 2
+        case .bottom: 4
+        case .right: 8
+        case .topLeft: 3
+        case .topRight: 9
+        case .bottomLeft: 6
+        case .bottomRight: 12
+        }
+    }
+
     var cursor: NSCursor {
-        if #available(macOS 15.0, *) {
-            let position: NSCursor.FrameResizePosition = switch self {
-            case .top: .top
-            case .topRight: .topRight
-            case .right: .right
-            case .bottomRight: .bottomRight
-            case .bottom: .bottom
-            case .bottomLeft: .bottomLeft
-            case .left: .left
-            case .topLeft: .topLeft
-            }
-            return NSCursor.frameResize(position: position, directions: .all)
+        cursor(resolvingFrameResizeCursorWith: MainWindowFrameResizeCursorRuntime.cursor)
+    }
+
+    func cursor(
+        resolvingFrameResizeCursorWith resolve: (UInt) -> NSCursor?
+    ) -> NSCursor {
+        if let nativeCursor = resolve(frameResizePosition) {
+            return nativeCursor
         }
 
-        // macOS 14 has no public diagonal frame-resize cursor. Keep the
-        // frame resizable and provide an axis cue rather than a custom image.
+        // macOS 14 has no public frame-resize cursor factory. Keep the frame
+        // resizable and provide an axis cue rather than a custom image.
         switch self {
         case .top, .bottom:
             return .resizeUpDown

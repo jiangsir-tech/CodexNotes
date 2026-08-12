@@ -1,4 +1,5 @@
 import AppKit
+import ObjectiveC.runtime
 import XCTest
 @testable import CodexNotesProbe
 
@@ -64,36 +65,77 @@ final class MainWindowResizeCursorControllerTests: XCTestCase {
         }
     }
 
-    func testAllRegionsMapToTheirNativeFrameResizeCursor() throws {
-        guard #available(macOS 15.0, *) else {
-            XCTAssertCursorEqual(
-                MainWindowResizeCursorRegion.top.cursor,
-                .resizeUpDown
-            )
-            XCTAssertCursorEqual(
-                MainWindowResizeCursorRegion.left.cursor,
-                .resizeLeftRight
-            )
-            return
-        }
-        let expected: [(MainWindowResizeCursorRegion, NSCursor.FrameResizePosition)] = [
-            (.top, .top),
-            (.topRight, .topRight),
-            (.right, .right),
-            (.bottomRight, .bottomRight),
-            (.bottom, .bottom),
-            (.bottomLeft, .bottomLeft),
-            (.left, .left),
-            (.topLeft, .topLeft),
+    func testAllRegionsMapToTheirNativeFrameResizePosition() {
+        let expected: [(MainWindowResizeCursorRegion, UInt)] = [
+            (.top, 1),
+            (.topRight, 9),
+            (.right, 8),
+            (.bottomRight, 12),
+            (.bottom, 4),
+            (.bottomLeft, 6),
+            (.left, 2),
+            (.topLeft, 3),
         ]
 
         for (region, position) in expected {
-            XCTAssertCursorEqual(
-                region.cursor,
-                NSCursor.frameResize(position: position, directions: .all),
+            var requestedPosition: UInt?
+            let cursor = region.cursor { requested in
+                requestedPosition = requested
+                return .crosshair
+            }
+
+            XCTAssertEqual(
+                region.frameResizePosition,
+                position,
                 "region=\(region)"
             )
+            XCTAssertEqual(requestedPosition, position, "region=\(region)")
+            XCTAssertTrue(cursor === NSCursor.crosshair, "region=\(region)")
         }
+    }
+
+    func testAllRegionsUseAxisFallbackWhenNativeFactoryIsUnavailable() {
+        for region in MainWindowResizeCursorRegion.allCases {
+            let expected: NSCursor = switch region {
+            case .top, .bottom:
+                .resizeUpDown
+            case .left, .right, .topLeft, .topRight, .bottomLeft, .bottomRight:
+                .resizeLeftRight
+            }
+            let cursor = region.cursor { _ in nil }
+
+            XCTAssertCursorEqual(cursor, expected, "region=\(region)")
+        }
+    }
+
+    func testProductionRuntimeUsesNativeFrameResizeCursorWhenAvailable() throws {
+        let selector = NSSelectorFromString(
+            "frameResizeCursorFromPosition:inDirections:"
+        )
+        guard let method = class_getClassMethod(NSCursor.self, selector) else {
+            throw XCTSkip("Native frame-resize cursors require macOS 15 or later")
+        }
+        typealias Factory = @convention(c) (
+            AnyClass,
+            Selector,
+            UInt,
+            UInt
+        ) -> Unmanaged<NSCursor>
+        let factory = unsafeBitCast(
+            method_getImplementation(method),
+            to: Factory.self
+        )
+        let expected = factory(
+            NSCursor.self,
+            selector,
+            3, // top-left
+            3  // inward | outward
+        ).takeUnretainedValue()
+
+        XCTAssertCursorEqual(
+            MainWindowResizeCursorRegion.topLeft.cursor,
+            expected
+        )
     }
 
     func testAttachUsesOneAlwaysActiveFullFrameTrackingAreaWithoutChangingHitTesting() throws {
