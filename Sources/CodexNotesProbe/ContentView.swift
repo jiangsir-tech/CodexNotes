@@ -1964,6 +1964,7 @@ struct WindowConfigurator: NSViewRepresentable {
         private var codexActivationTimeoutWorkItem: DispatchWorkItem?
         private let codexAvailabilityMonitor: CodexApplicationAvailabilityObserving
         private let closeButtonHoverHintController = CloseButtonHoverHintController()
+        private let resizeCursorController = MainWindowResizeCursorController()
         private var appliedLanguageRevision: String?
         private var isInvalidated = false
 
@@ -1984,6 +1985,7 @@ struct WindowConfigurator: NSViewRepresentable {
                     languageRevision: languageRevision
                 )
                 refreshCloseButtonHoverHint(for: window)
+                refreshResizeCursorTracking(for: window)
                 return
             }
             if self.window != nil {
@@ -2044,6 +2046,7 @@ struct WindowConfigurator: NSViewRepresentable {
             installFramePersistenceObservers(for: window)
             appliedLanguageRevision = languageRevision
             refreshCloseButtonHoverHint(for: window)
+            refreshResizeCursorTracking(for: window)
             updateVisibility(frontmostApplication: NSWorkspace.shared.frontmostApplication)
         }
 
@@ -2055,6 +2058,7 @@ struct WindowConfigurator: NSViewRepresentable {
 
         func detach() {
             closeButtonHoverHintController.detach()
+            resizeCursorController.detach()
             cancelCodexActivationTimeout()
             codexAvailabilityMonitor.stop()
             if let activationObserver {
@@ -2107,6 +2111,11 @@ struct WindowConfigurator: NSViewRepresentable {
                 return
             }
             closeButtonHoverHintController.attach(to: closeButton, in: window)
+        }
+
+        func refreshResizeCursorTracking(for window: NSWindow) {
+            guard !isInvalidated, self.window === window else { return }
+            resizeCursorController.attach(to: window)
         }
 
         func refreshLocalizationIfNeeded(
@@ -2203,6 +2212,7 @@ struct WindowConfigurator: NSViewRepresentable {
 
         private func orderOutMainWindow(_ window: NSWindow) {
             closeButtonHoverHintController.cancelAndDismiss()
+            resizeCursorController.cancelAndRestore()
             window.orderOut(nil)
         }
 
@@ -2417,6 +2427,7 @@ struct WindowConfigurator: NSViewRepresentable {
                 languageRevision: languageRevision
             )
             context.coordinator.refreshCloseButtonHoverHint(for: window)
+            context.coordinator.refreshResizeCursorTracking(for: window)
         }
     }
 
