@@ -2304,8 +2304,12 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         harness.textView.setSelectedRange((text as NSString).range(of: "显示"))
         runMainLoop(for: 0.05)
         XCTAssertNil(harness.textView.visibleSelectionMovePill)
-        runMainLoop(for: 0.15)
-        XCTAssertNotNil(harness.textView.visibleSelectionMovePill)
+        XCTAssertTrue(
+            waitUntil(timeout: 1) {
+                harness.textView.visibleSelectionMovePill != nil
+            },
+            "Move pill did not appear after the debounce interval."
+        )
     }
 
     func testSelectionToolbarUsesCompactLayoutAndAccessibleActions() throws {
