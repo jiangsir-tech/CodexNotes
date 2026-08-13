@@ -99,6 +99,7 @@ final class MarkdownEditorController: ObservableObject {
     @Published private(set) var canToggleHighlightFormat = false
     private weak var textView: CheckboxTextView?
     private var pendingSelectionAfterExternalTextUpdate: PendingSelection?
+    var textCompositionDidEnd: (() -> Void)?
 
     private struct PendingSelection {
         let range: NSRange
@@ -127,6 +128,20 @@ final class MarkdownEditorController: ObservableObject {
 
     func moveCurrentSelection() {
         textView?.moveCurrentSelection()
+    }
+
+    func blocksAutomaticWindowCollapse(in window: NSWindow) -> Bool {
+        guard let textView else { return false }
+        return textView.hasMarkedText()
+            || (window.isKeyWindow && window.firstResponder === textView)
+    }
+
+    var hasActiveTextComposition: Bool {
+        textView?.hasMarkedText() == true
+    }
+
+    fileprivate func notifyTextCompositionDidEnd() {
+        textCompositionDidEnd?()
     }
 
     func setPendingSelectionAfterExternalTextUpdate(
@@ -2762,6 +2777,9 @@ final class CheckboxTextView: NSTextView, NSTextStorageDelegate {
         {
             refreshChecklistPresentation(forceLayout: true)
         }
+        if !hasMarkedText() {
+            editorController?.notifyTextCompositionDidEnd()
+        }
     }
 
     private func applyChecklistParagraphStyles(
@@ -3371,6 +3389,12 @@ final class CheckboxTextView: NSTextView, NSTextStorageDelegate {
     }
 
     override func insertText(_ insertString: Any, replacementRange: NSRange) {
+        let wasComposing = hasMarkedText()
+        defer {
+            if wasComposing, !hasMarkedText() {
+                editorController?.notifyTextCompositionDidEnd()
+            }
+        }
         dismissSelectionMovePill()
         let replacementRange = normalizedInlineInputRange(replacementRange)
         if !isApplyingMarkdownEditPlan,

@@ -9,6 +9,14 @@
 "settings.launch_at_login.requires_approval" = "CodexNotes was added as a login item but isn’t active yet. Allow it in System Settings.";
 "settings.launch_at_login.open_system_settings" = "Open System Settings";
 "settings.launch_at_login.error" = "Couldn’t change the launch-at-login setting. Try again.";
+"settings.right_panel_avoidance.title" = "Automatically Avoid the Codex Sidebar";
+"settings.right_panel_avoidance.description" = "When enabled, CodexNotes collapses once per right-sidebar cycle and gives priority to the pre-sidebar expanded state when the sidebar closes. When automatic avoidance is off, the top-right button still collapses and expands CodexNotes manually.";
+"settings.right_panel_avoidance.permission_title" = "Accessibility Permission";
+"settings.right_panel_avoidance.authorized" = "Allowed";
+"settings.right_panel_avoidance.not_authorized" = "Not Allowed";
+"settings.right_panel_avoidance.permission_description" = "Detecting an empty sidebar requires Accessibility permission. CodexNotes only reads the Codex window layout; it does not read keyboard input.";
+"settings.right_panel_avoidance.request_permission" = "Allow Accessibility Permission";
+"settings.right_panel_avoidance.open_system_settings" = "Open System Settings";
 "settings.global_hot_key.title" = "Show/Hide CodexNotes";
 "settings.global_hot_key.description" = "Available from any app while Codex is running and visible. If another app also responds, or nothing happens, choose a different shortcut.";
 "settings.global_hot_key.record" = "Set Shortcut";
@@ -289,6 +297,10 @@
 "status_item.quit" = "Quit CodexNotes";
 "main_window.close.accessibility_label" = "Hide CodexNotes";
 "main_window.close.accessibility_help" = "Hides the notes window. CodexNotes will keep running in the menu bar.";
+"main_window.collapse.accessibility_label" = "Collapse CodexNotes";
+"main_window.collapse.accessibility_help" = "Collapses the note content and leaves only the title bar.";
+"main_window.expand.accessibility_label" = "Expand CodexNotes";
+"main_window.expand.accessibility_help" = "Expands the complete notes window.";
 "window.close.hover_hint" = "Hide CodexNotes";
 "app.command.save_now" = "Save Now";
 

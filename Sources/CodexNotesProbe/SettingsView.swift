@@ -56,6 +56,7 @@ struct SettingsView: View {
     @StateObject private var loginItemService = LoginItemService()
     @State private var globalHotKeyErrorKey: L10n.Key?
     @State private var windowSizeRestoreConfirmationID: UUID?
+    @State private var isAccessibilityAuthorized = AXIsProcessTrusted()
     @AppStorage(AppLanguagePreference.key)
     private var storedLanguage = AppLanguagePreference.defaultValue.rawValue
     @AppStorage(EditorFontSizePreference.key)
@@ -66,6 +67,9 @@ struct SettingsView: View {
     private var storedThemeID = NoteThemePreference.defaultValue.rawValue
     @AppStorage(StatusBarIconPreference.key)
     private var storedStatusBarIconID = StatusBarIconPreference.defaultValue.rawValue
+    @AppStorage(RightPanelAvoidancePreference.key)
+    private var rightPanelAvoidanceEnabled =
+        RightPanelAvoidancePreference.defaultValue
 
     init(
         updateCoordinator: UpdateCheckCoordinator,
@@ -176,6 +180,11 @@ struct SettingsView: View {
                             .overlay(palette.separator.color)
 
                         launchAtLoginControls
+
+                        Divider()
+                            .overlay(palette.separator.color)
+
+                        rightPanelAvoidanceControls
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -329,6 +338,7 @@ struct SettingsView: View {
         )
         .onAppear {
             loginItemService.refresh()
+            refreshAccessibilityPermission()
         }
         .onReceive(
             NotificationCenter.default.publisher(
@@ -336,6 +346,7 @@ struct SettingsView: View {
             )
         ) { _ in
             loginItemService.refresh()
+            refreshAccessibilityPermission()
         }
         .onReceive(
             NotificationCenter.default.publisher(
@@ -595,6 +606,125 @@ struct SettingsView: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var rightPanelAvoidanceControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L10n.text(.settingsRightPanelAvoidanceTitle))
+                        .font(.subheadline.weight(.medium))
+                    Text(L10n.text(.settingsRightPanelAvoidanceDescription))
+                        .font(.caption)
+                        .foregroundStyle(palette.secondaryText.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityHidden(true)
+
+                Spacer(minLength: 24)
+
+                Toggle(
+                    L10n.text(.settingsRightPanelAvoidanceTitle),
+                    isOn: $rightPanelAvoidanceEnabled
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .accessibilityLabel(Text(L10n.text(
+                    .settingsRightPanelAvoidanceTitle
+                )))
+                .accessibilityValue(Text(L10n.text(
+                    rightPanelAvoidanceEnabled
+                        ? .accessibilityValueOn
+                        : .accessibilityValueOff
+                )))
+                .accessibilityHint(Text(L10n.text(
+                    .settingsRightPanelAvoidanceDescription
+                )))
+            }
+
+            HStack(alignment: .center, spacing: 7) {
+                Image(systemName: isAccessibilityAuthorized
+                    ? "checkmark.circle.fill"
+                    : "exclamationmark.triangle.fill")
+                    .foregroundStyle(isAccessibilityAuthorized
+                        ? palette.success.color
+                        : palette.warning.color)
+                    .accessibilityHidden(true)
+
+                Text(L10n.text(.settingsRightPanelAvoidancePermissionTitle))
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText.color)
+
+                Spacer(minLength: 12)
+
+                Text(L10n.text(
+                    isAccessibilityAuthorized
+                        ? .settingsRightPanelAvoidanceAuthorized
+                        : .settingsRightPanelAvoidanceNotAuthorized
+                ))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(isAccessibilityAuthorized
+                        ? palette.success.color
+                        : palette.warning.color)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(L10n.text(
+                .settingsRightPanelAvoidancePermissionTitle
+            )))
+            .accessibilityValue(Text(L10n.text(
+                isAccessibilityAuthorized
+                    ? .settingsRightPanelAvoidanceAuthorized
+                    : .settingsRightPanelAvoidanceNotAuthorized
+            )))
+
+            if rightPanelAvoidanceEnabled && !isAccessibilityAuthorized {
+                HStack(alignment: .top, spacing: 7) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(palette.warning.color)
+                        .accessibilityHidden(true)
+                    Text(L10n.text(.settingsRightPanelAvoidancePermissionDescription))
+                        .font(.caption)
+                        .foregroundStyle(palette.warning.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 12) {
+                    Button(L10n.text(.settingsRightPanelAvoidanceRequestPermission)) {
+                        requestAccessibilityPermission()
+                    }
+                    .buttonStyle(.link)
+                    .controlSize(.small)
+
+                    Button(L10n.text(.settingsRightPanelAvoidanceOpenSystemSettings)) {
+                        openAccessibilitySystemSettings()
+                    }
+                    .buttonStyle(.link)
+                    .controlSize(.small)
+                }
+                .padding(.leading, 20)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func refreshAccessibilityPermission() {
+        isAccessibilityAuthorized = AXIsProcessTrusted()
+    }
+
+    private func requestAccessibilityPermission() {
+        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue()
+            as String
+        let options = [promptKey: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
+        refreshAccessibilityPermission()
+    }
+
+    private func openAccessibilitySystemSettings() {
+        guard let url = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        ) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func settingsPanel<Content: View>(

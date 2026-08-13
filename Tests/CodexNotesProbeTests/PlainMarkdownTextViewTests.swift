@@ -1010,6 +1010,15 @@ final class PlainMarkdownTextViewTests: XCTestCase {
             selectedRange: NSRange(location: 5, length: 0),
             replacementRange: NSRange(location: NSNotFound, length: 0)
         )
+        let expectedSelection = NSRange(
+            location: ((first.markdown + "\r\nceshi") as NSString).length,
+            length: 0
+        )
+        var selectionAtCompositionEnd: NSRange?
+        let markedTextView = markedHarness.textView
+        markedHarness.controller.textCompositionDidEnd = {
+            selectionAtCompositionEnd = markedTextView.selectedRange()
+        }
         markedHarness.textView.unmarkText()
         XCTAssertEqual(
             markedHarness.textView.string,
@@ -1018,11 +1027,9 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         XCTAssertEqual(MarkdownImage.matches(in: markedHarness.textView.string).count, 2)
         XCTAssertEqual(
             markedHarness.textView.selectedRange(),
-            NSRange(
-                location: ((first.markdown + "\r\nceshi") as NSString).length,
-                length: 0
-            )
+            expectedSelection
         )
+        XCTAssertEqual(selectionAtCompositionEnd, expectedSelection)
         markedHarness.textView.insertText(
             "后",
             replacementRange: markedHarness.textView.selectedRange()
@@ -1552,6 +1559,42 @@ final class PlainMarkdownTextViewTests: XCTestCase {
             ) as? NSParagraphStyle
         )
         XCTAssertGreaterThan(styleAfterCommit.headIndent, 0)
+        XCTAssertEqual(textView.string, text + "拼")
+    }
+
+    func testCompositionEndCallbackRunsAfterPendingPresentationCleanup() throws {
+        let text = "- [ ] 这是一条需要换行的待办内容。"
+        let harness = makeHarness(text: text, textWidth: 170, refresh: false)
+        let textView = harness.textView
+        let sourceLength = (textView.string as NSString).length
+        textView.setSelectedRange(NSRange(location: sourceLength, length: 0))
+        textView.setMarkedText(
+            "拼",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: sourceLength, length: 0)
+        )
+        textView.refreshChecklistPresentation(forceLayout: true)
+
+        var callbackCount = 0
+        var callbackSawMarkedText = true
+        var callbackHeadIndent: CGFloat?
+        harness.controller.textCompositionDidEnd = {
+            callbackCount += 1
+            callbackSawMarkedText = textView.hasMarkedText()
+            callbackHeadIndent = (
+                textView.textStorage?.attribute(
+                    .paragraphStyle,
+                    at: 0,
+                    effectiveRange: nil
+                ) as? NSParagraphStyle
+            )?.headIndent
+        }
+
+        textView.unmarkText()
+
+        XCTAssertEqual(callbackCount, 1)
+        XCTAssertFalse(callbackSawMarkedText)
+        XCTAssertGreaterThan(try XCTUnwrap(callbackHeadIndent), 0)
         XCTAssertEqual(textView.string, text + "拼")
     }
 

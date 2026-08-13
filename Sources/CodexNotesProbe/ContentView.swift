@@ -2,20 +2,53 @@ import AppKit
 import CodexNotesCore
 import SwiftUI
 
+@MainActor
+enum MainWindowContentSizingPolicy {
+    static let idealHeight: CGFloat = 660
+
+    static func minimumWidth(isCollapsed: Bool) -> CGFloat {
+        isCollapsed
+            ? MainWindowCompactController.compactWindowWidth
+            : MainWindowCompactController.minimumExpandedContentSize.width
+    }
+
+    static func minimumHeight(isCollapsed: Bool) -> CGFloat {
+        isCollapsed
+            ? MainWindowCompactController.compactContentHeight
+            : 520
+    }
+
+    /// AppKit owns the main window's compact/expanded frame. Returning no fixed
+    /// SwiftUI height prevents `.windowResizability(.contentMinSize)` from
+    /// performing a second resize anchored to the opposite window edge after
+    /// the controller has already applied its top-anchored frame.
+    static func fixedHeight(
+        isCompactPresentationActive _: Bool
+    ) -> CGFloat? {
+        nil
+    }
+}
+
 struct ContentView: View {
     @ObservedObject var model: ProbeViewModel
     @ObservedObject var updateCoordinator: UpdateCheckCoordinator
     @ObservedObject var globalHotKeyController: GlobalHotKeyController
     let languagePreference: AppLanguagePreference
     @StateObject private var editorController = MarkdownEditorController()
+    @StateObject private var compactController = MainWindowCompactController()
     @Environment(\.colorScheme) private var inheritedColorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency)
+    private var reduceTransparency
     @AppStorage(EditorFontSizePreference.key)
     private var storedEditorFontSize = EditorFontSizePreference.defaultValue
     @AppStorage(EditorLineSpacingPreference.key)
     private var storedEditorLineSpacing = EditorLineSpacingPreference.defaultValue
     @AppStorage(NoteThemePreference.key)
     private var storedThemeID = NoteThemePreference.defaultValue.rawValue
+    @AppStorage(RightPanelAvoidancePreference.key)
+    private var rightPanelAvoidanceEnabled =
+        RightPanelAvoidancePreference.defaultValue
     @State private var isShortcutReferencePresented = false
 
     private var activeTheme: NoteThemeID {
@@ -63,11 +96,24 @@ struct ContentView: View {
         .padding(.top, BottomBarActionMetrics.topContentInset)
         .padding(.bottom, BottomBarActionMetrics.bottomPadding)
         .frame(
-            minWidth: BottomBarActionMetrics.minimumWindowWidth,
+            minWidth: MainWindowContentSizingPolicy.minimumWidth(
+                isCollapsed: compactController.isCollapsed
+            ),
             idealWidth: 400,
-            minHeight: 520,
-            idealHeight: 660
+            minHeight: MainWindowContentSizingPolicy.minimumHeight(
+                isCollapsed: compactController.isCollapsed
+            ),
+            idealHeight: MainWindowContentSizingPolicy.idealHeight
         )
+        .frame(
+            height: MainWindowContentSizingPolicy.fixedHeight(
+                isCompactPresentationActive:
+                    compactController.isCompactContentPresentationActive
+            ),
+            alignment: .top
+        )
+        .clipped()
+        .allowsHitTesting(!compactController.isCollapsed)
         .foregroundStyle(palette.primaryText.color)
         .tint(palette.accent.color)
         .environment(\.locale, resolvedLanguage.locale)
@@ -86,11 +132,24 @@ struct ContentView: View {
                 BordeauxCottonPaperTextureOverlay()
             }
         }
+        // Keep the AppKit configurator alive while compact, but hide every
+        // SwiftUI visual layer above it. Applying opacity before the theme
+        // background left the 3pt compact content sliver fully opaque, which
+        // appeared as a pale line and also covered content behind the bar.
+        .opacity(compactController.isCompactContentPresentationActive ? 0 : 1)
         .background(
             WindowConfigurator(
                 appearanceName: palette.appearanceName,
                 backgroundColor: palette.windowBackground.nsColor,
-                languageRevision: languageRevision
+                languageRevision: languageRevision,
+                compactController: compactController,
+                editorController: editorController,
+                rightPanelSelectionStableKey:
+                    model.rightPanelObservation.selectionStableKey,
+                rightPanelState: model.rightPanelObservation.state,
+                rightPanelAvoidanceEnabled: rightPanelAvoidanceEnabled,
+                reduceMotion: reduceMotion,
+                reduceTransparency: reduceTransparency
             )
         )
         .background(
@@ -102,7 +161,13 @@ struct ContentView: View {
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
         )
-        .onAppear { model.start() }
+        .onAppear {
+            model.setRightPanelAvoidanceEnabled(rightPanelAvoidanceEnabled)
+            model.start()
+        }
+        .onChange(of: rightPanelAvoidanceEnabled) { _, isEnabled in
+            model.setRightPanelAvoidanceEnabled(isEnabled)
+        }
         .alert(
             L10n.text(.moveSelectionAlertTitle),
             isPresented: Binding(
@@ -1950,6 +2015,13 @@ struct WindowConfigurator: NSViewRepresentable {
     let appearanceName: NSAppearance.Name?
     let backgroundColor: NSColor
     let languageRevision: String
+    let compactController: MainWindowCompactController
+    let editorController: MarkdownEditorController
+    let rightPanelSelectionStableKey: String?
+    let rightPanelState: CodexRightPanelState
+    let rightPanelAvoidanceEnabled: Bool
+    let reduceMotion: Bool
+    let reduceTransparency: Bool
 
     @MainActor
     final class Coordinator: NSObject, NSWindowDelegate {
@@ -1965,6 +2037,9 @@ struct WindowConfigurator: NSViewRepresentable {
         private let codexAvailabilityMonitor: CodexApplicationAvailabilityObserving
         private let closeButtonHoverHintController = CloseButtonHoverHintController()
         private let resizeCursorController = MainWindowResizeCursorController()
+        private weak var compactController: MainWindowCompactController?
+        private var compactSelectionStableKey: String?
+        private var compactRightPanelState: CodexRightPanelState?
         private var appliedLanguageRevision: String?
         private var isInvalidated = false
 
@@ -1976,10 +2051,32 @@ struct WindowConfigurator: NSViewRepresentable {
             super.init()
         }
 
-        func attach(to window: NSWindow, languageRevision: String) {
+        func attach(
+            to window: NSWindow,
+            languageRevision: String,
+            compactController: MainWindowCompactController? = nil,
+            editorController: MarkdownEditorController? = nil,
+            backgroundColor: NSColor = .windowBackgroundColor,
+            rightPanelSelectionStableKey: String? = nil,
+            rightPanelState: CodexRightPanelState = .unknown,
+            rightPanelAvoidanceEnabled: Bool =
+                RightPanelAvoidancePreference.defaultValue,
+            reduceMotion: Bool = false,
+            reduceTransparency: Bool = false
+        ) {
             guard !isInvalidated,
                   window.identifier == CodexNotesWindowIdentifier.main else { return }
             if self.window === window {
+                configureCompactBehavior(
+                    compactController: compactController,
+                    editorController: editorController,
+                    backgroundColor: backgroundColor,
+                    rightPanelSelectionStableKey: rightPanelSelectionStableKey,
+                    rightPanelState: rightPanelState,
+                    rightPanelAvoidanceEnabled: rightPanelAvoidanceEnabled,
+                    reduceMotion: reduceMotion,
+                    reduceTransparency: reduceTransparency
+                )
                 refreshLocalizationIfNeeded(
                     for: window,
                     languageRevision: languageRevision
@@ -1994,6 +2091,16 @@ struct WindowConfigurator: NSViewRepresentable {
             self.window = window
             originalWindowDelegate = window.delegate
             window.delegate = self
+            configureCompactBehavior(
+                compactController: compactController,
+                editorController: editorController,
+                backgroundColor: backgroundColor,
+                rightPanelSelectionStableKey: rightPanelSelectionStableKey,
+                rightPanelState: rightPanelState,
+                rightPanelAvoidanceEnabled: rightPanelAvoidanceEnabled,
+                reduceMotion: reduceMotion,
+                reduceTransparency: reduceTransparency
+            )
             codexAvailabilityMonitor.start { [weak self] isAvailable in
                 self?.codexAvailabilityDidChange(isAvailable)
             }
@@ -2079,13 +2186,18 @@ struct WindowConfigurator: NSViewRepresentable {
                 )
             }
             restoreDefaultSizeObserver = nil
-            if let window {
+            if let window,
+               compactController?.shouldPersistCurrentFrame != false {
                 MainWindowFramePersistence.persistIfVisible(window: window)
             }
             framePersistenceObservers.forEach(
                 NotificationCenter.default.removeObserver
             )
             framePersistenceObservers.removeAll()
+            compactController?.detach()
+            compactController = nil
+            compactSelectionStableKey = nil
+            compactRightPanelState = nil
             if window?.delegate === self {
                 window?.delegate = originalWindowDelegate
             }
@@ -2105,7 +2217,8 @@ struct WindowConfigurator: NSViewRepresentable {
 
         func refreshCloseButtonHoverHint(for window: NSWindow) {
             guard !isInvalidated, self.window === window else { return }
-            guard window.identifier == CodexNotesWindowIdentifier.main,
+            guard compactController?.isCollapsed != true,
+                  window.identifier == CodexNotesWindowIdentifier.main,
                   let closeButton = window.standardWindowButton(.closeButton) else {
                 closeButtonHoverHintController.detach()
                 return
@@ -2115,7 +2228,11 @@ struct WindowConfigurator: NSViewRepresentable {
 
         func refreshResizeCursorTracking(for window: NSWindow) {
             guard !isInvalidated, self.window === window else { return }
-            resizeCursorController.attach(to: window)
+            if compactController?.isCollapsed == true {
+                resizeCursorController.detach()
+            } else {
+                resizeCursorController.attach(to: window)
+            }
         }
 
         func refreshLocalizationIfNeeded(
@@ -2127,6 +2244,74 @@ struct WindowConfigurator: NSViewRepresentable {
                   appliedLanguageRevision != languageRevision else { return }
             appliedLanguageRevision = languageRevision
             closeButtonHoverHintController.cancelAndDismiss()
+        }
+
+        func configureCompactBehavior(
+            compactController: MainWindowCompactController?,
+            editorController: MarkdownEditorController?,
+            backgroundColor: NSColor,
+            rightPanelSelectionStableKey: String?,
+            rightPanelState: CodexRightPanelState,
+            rightPanelAvoidanceEnabled: Bool,
+            reduceMotion: Bool,
+            reduceTransparency: Bool
+        ) {
+            guard !isInvalidated, let window = self.window else { return }
+
+            if let previous = self.compactController,
+               previous !== compactController {
+                previous.detach()
+                compactSelectionStableKey = nil
+                compactRightPanelState = nil
+            }
+            self.compactController = compactController
+
+            guard let compactController, let editorController else { return }
+            compactController.attach(
+                to: window,
+                editorController: editorController,
+                backgroundColor: backgroundColor,
+                reduceMotion: reduceMotion,
+                reduceTransparency: reduceTransparency
+            )
+            compactController.setAutomaticAvoidanceEnabled(
+                rightPanelAvoidanceEnabled
+            )
+            compactController.compactStateDidChange = { [weak self, weak window] _ in
+                guard let self, let window else { return }
+                self.refreshCloseButtonHoverHint(for: window)
+                self.refreshResizeCursorTracking(for: window)
+            }
+            observeRightPanel(
+                rightPanelState,
+                selectionStableKey: rightPanelSelectionStableKey
+            )
+        }
+
+        private func observeRightPanel(
+            _ state: CodexRightPanelState,
+            selectionStableKey: String?
+        ) {
+            guard let compactController, let selectionStableKey else { return }
+
+            if compactRightPanelState == nil {
+                compactSelectionStableKey = selectionStableKey
+                compactRightPanelState = state
+                compactController.observeRightPanel(state)
+                return
+            }
+
+            if compactSelectionStableKey != selectionStableKey {
+                compactSelectionStableKey = selectionStableKey
+                compactRightPanelState = state
+                compactController.selectionDidChange(seeding: state)
+                return
+            }
+
+            guard compactRightPanelState != state else { return }
+            compactSelectionStableKey = selectionStableKey
+            compactRightPanelState = state
+            compactController.observeRightPanel(state)
         }
 
         func windowShouldZoom(
@@ -2157,6 +2342,7 @@ struct WindowConfigurator: NSViewRepresentable {
         }
 
         private func restoreDefaultWindowSize() {
+            compactController?.prepareForDefaultSizeRestore()
             guard let window,
                   MainWindowFramePersistence.restoreDefaultSize(
                       window: window
@@ -2168,6 +2354,7 @@ struct WindowConfigurator: NSViewRepresentable {
         }
 
         private func presentMainWindow(_ window: NSWindow) {
+            compactController?.userDidShowWindow()
             let frontmostApplication = NSWorkspace.shared.frontmostApplication
             let frontmostBundleIdentifier = frontmostApplication?.bundleIdentifier
             let companionBundleIdentifier = Bundle.main.bundleIdentifier
@@ -2206,7 +2393,9 @@ struct WindowConfigurator: NSViewRepresentable {
         private func hideMainWindow(_ window: NSWindow) {
             cancelCodexActivationTimeout()
             visibilityState.recordManualHide()
-            MainWindowFramePersistence.persist(window: window)
+            if compactController?.shouldPersistCurrentFrame != false {
+                MainWindowFramePersistence.persist(window: window)
+            }
             orderOutMainWindow(window)
         }
 
@@ -2233,9 +2422,11 @@ struct WindowConfigurator: NSViewRepresentable {
                         ? NSApp
                         : window,
                     queue: .main
-                ) { [weak window] _ in
-                    guard let window else { return }
+                ) { [weak self, weak window] _ in
+                    guard let self, let window else { return }
                     MainActor.assumeIsolated {
+                        guard self.compactController?
+                            .shouldPersistCurrentFrame != false else { return }
                         MainWindowFramePersistence.persistIfVisible(
                             window: window
                         )
@@ -2368,7 +2559,11 @@ struct WindowConfigurator: NSViewRepresentable {
                 if NSApp.isHidden {
                     NSApp.unhideWithoutActivation()
                 }
-                MainWindowFramePersistence.showPreservingFrame(window: window)
+                if compactController?.isCollapsed == true {
+                    compactController?.presentPreservingTransientFrame()
+                } else {
+                    MainWindowFramePersistence.showPreservingFrame(window: window)
+                }
             case .hide:
                 orderOutMainWindow(window)
             case .none:
@@ -2399,7 +2594,10 @@ struct WindowConfigurator: NSViewRepresentable {
         DispatchQueue.main.async {
             guard let window = view.window else { return }
             applyTheme(to: window)
-            MainWindowChromePolicy.apply(to: window)
+            MainWindowChromePolicy.apply(
+                to: window,
+                isCollapsed: compactController.isCollapsed
+            )
             window.level = .floating
             window.hidesOnDeactivate = false
             window.collectionBehavior.insert(.fullScreenAuxiliary)
@@ -2411,7 +2609,15 @@ struct WindowConfigurator: NSViewRepresentable {
             }
             coordinator.attach(
                 to: window,
-                languageRevision: languageRevision
+                languageRevision: languageRevision,
+                compactController: compactController,
+                editorController: editorController,
+                backgroundColor: backgroundColor,
+                rightPanelSelectionStableKey: rightPanelSelectionStableKey,
+                rightPanelState: rightPanelState,
+                rightPanelAvoidanceEnabled: rightPanelAvoidanceEnabled,
+                reduceMotion: reduceMotion,
+                reduceTransparency: reduceTransparency
             )
         }
         return view
@@ -2421,12 +2627,25 @@ struct WindowConfigurator: NSViewRepresentable {
         DispatchQueue.main.async {
             guard let window = nsView.window else { return }
             applyTheme(to: window)
-            MainWindowChromePolicy.apply(to: window)
+            MainWindowChromePolicy.apply(
+                to: window,
+                isCollapsed: compactController.isCollapsed
+            )
             context.coordinator.refreshLocalizationIfNeeded(
                 for: window,
                 languageRevision: languageRevision
             )
             context.coordinator.refreshCloseButtonHoverHint(for: window)
+            context.coordinator.configureCompactBehavior(
+                compactController: compactController,
+                editorController: editorController,
+                backgroundColor: backgroundColor,
+                rightPanelSelectionStableKey: rightPanelSelectionStableKey,
+                rightPanelState: rightPanelState,
+                rightPanelAvoidanceEnabled: rightPanelAvoidanceEnabled,
+                reduceMotion: reduceMotion,
+                reduceTransparency: reduceTransparency
+            )
             context.coordinator.refreshResizeCursorTracking(for: window)
         }
     }
@@ -2443,7 +2662,8 @@ struct WindowConfigurator: NSViewRepresentable {
         } else if window.appearance != nil {
             window.appearance = nil
         }
-        if !window.backgroundColor.isEqual(backgroundColor) {
+        if !compactController.isCollapsed,
+           !window.backgroundColor.isEqual(backgroundColor) {
             window.backgroundColor = backgroundColor
         }
     }

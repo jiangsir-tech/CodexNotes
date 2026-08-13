@@ -7,13 +7,14 @@ enum MainWindowChromePolicy {
     @MainActor
     static func apply(
         to window: NSWindow,
+        isCollapsed: Bool = false,
         localization: AppLocalization = AppLocalization(
             preference: AppLanguagePreference.load()
         )
     ) {
         if let closeButton = window.standardWindowButton(.closeButton) {
-            closeButton.isEnabled = true
-            closeButton.isHidden = false
+            closeButton.isEnabled = !isCollapsed
+            closeButton.isHidden = isCollapsed
             // AppKit's native tooltip intentionally waits several seconds.
             // The hover controller supplies a fast, local hint instead.
             closeButton.toolTip = nil

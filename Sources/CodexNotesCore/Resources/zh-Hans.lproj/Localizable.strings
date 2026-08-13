@@ -9,6 +9,14 @@
 "settings.launch_at_login.requires_approval" = "CodexNotes 已添加为登录项，但尚未生效；请在系统设置中允许。";
 "settings.launch_at_login.open_system_settings" = "打开系统设置";
 "settings.launch_at_login.error" = "无法更改登录启动设置，请重试。";
+"settings.right_panel_avoidance.title" = "自动避让 Codex 侧边栏";
+"settings.right_panel_avoidance.description" = "开启后，右侧边栏打开时每轮自动收起一次，关闭时优先恢复打开边栏前的展开状态。关闭自动避让后，仍可使用右上角按钮手动折叠和展开。";
+"settings.right_panel_avoidance.permission_title" = "辅助功能权限";
+"settings.right_panel_avoidance.authorized" = "已允许";
+"settings.right_panel_avoidance.not_authorized" = "未允许";
+"settings.right_panel_avoidance.permission_description" = "精确识别空侧边栏需要辅助功能权限。CodexNotes 只读取 Codex 窗口布局，不读取键盘输入。";
+"settings.right_panel_avoidance.request_permission" = "允许辅助功能权限";
+"settings.right_panel_avoidance.open_system_settings" = "打开系统设置";
 "settings.global_hot_key.title" = "显示/隐藏 CodexNotes";
 "settings.global_hot_key.description" = "Codex 正在显示时，可在任意应用中使用；若同时触发其他应用或无响应，请换一个";
 "settings.global_hot_key.record" = "设置快捷键";
@@ -289,6 +297,10 @@
 "status_item.quit" = "退出 CodexNotes";
 "main_window.close.accessibility_label" = "隐藏 CodexNotes";
 "main_window.close.accessibility_help" = "隐藏笔记窗口，应用继续在状态栏运行";
+"main_window.collapse.accessibility_label" = "折叠 CodexNotes";
+"main_window.collapse.accessibility_help" = "收起笔记内容，只保留标题栏";
+"main_window.expand.accessibility_label" = "展开 CodexNotes";
+"main_window.expand.accessibility_help" = "展开完整笔记窗口";
 "window.close.hover_hint" = "隐藏 CodexNotes";
 "app.command.save_now" = "立即保存";
 
