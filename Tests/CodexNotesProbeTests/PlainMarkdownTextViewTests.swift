@@ -1388,9 +1388,11 @@ final class PlainMarkdownTextViewTests: XCTestCase {
         textView.setSelectedRange(NSRange(location: insertionLocation, length: 0))
 
         let lengths = Array(1...12) + Array((1...11).reversed())
+        var updateDurations: [Double] = []
         let updateStart = CFAbsoluteTimeGetCurrent()
         for (index, length) in lengths.enumerated() {
             let markedText = String(repeating: "n", count: length)
+            let singleUpdateStart = CFAbsoluteTimeGetCurrent()
             textView.setMarkedText(
                 markedText,
                 selectedRange: NSRange(location: length, length: 0),
@@ -1398,13 +1400,30 @@ final class PlainMarkdownTextViewTests: XCTestCase {
                     ? NSRange(location: insertionLocation, length: 0)
                     : NSRange(location: NSNotFound, length: 0)
             )
+            updateDurations.append(
+                (CFAbsoluteTimeGetCurrent() - singleUpdateStart) * 1_000
+            )
         }
         let updateMilliseconds = (CFAbsoluteTimeGetCurrent() - updateStart) * 1_000
+        let sortedDurations = updateDurations.sorted()
+        let percentile90Index = max(
+            0,
+            Int(ceil(Double(sortedDurations.count) * 0.9)) - 1
+        )
+        let percentile90Milliseconds = sortedDurations[percentile90Index]
+        let maximumUpdateMilliseconds = sortedDurations.last ?? 0
 
         XCTAssertTrue(textView.hasMarkedText())
-        XCTAssertLessThan(updateMilliseconds, 1_000)
+        XCTAssertEqual(updateDurations.count, lengths.count)
+        XCTAssertLessThan(percentile90Milliseconds, 100)
+        XCTAssertLessThan(maximumUpdateMilliseconds, 1_000)
+        XCTAssertLessThan(updateMilliseconds, 3_000)
         textView.unmarkText()
-        print("TEXTKIT_IME_BENCHMARK updates_ms=\(updateMilliseconds)")
+        print(
+            "TEXTKIT_IME_BENCHMARK updates_ms=\(updateMilliseconds) "
+                + "p90_ms=\(percentile90Milliseconds) "
+                + "max_ms=\(maximumUpdateMilliseconds)"
+        )
     }
 
     func testChecklistLayoutAcrossFontSpacingAndCompletionMatrix() throws {
