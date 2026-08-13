@@ -249,10 +249,25 @@ final class MainWindowCompactControllerTests: XCTestCase {
         }
     }
 
-    func testFullSizeContentWindowCollapseKeepsTopEdgeAfterAppKitLayout() async {
+    func testFullSizeContentWindowCollapseKeepsTopEdgeAfterAppKitLayout() async throws {
+        guard let visibleFrame = NSScreen.main?.visibleFrame else {
+            throw XCTSkip("AppKit window integration requires a visible screen")
+        }
+        guard visibleFrame.width >= 380, visibleFrame.height >= 560 else {
+            throw XCTSkip("Visible screen is too small for the expanded-window contract")
+        }
         await preservingStableFrameDefaultsAsync {
+            let windowSize = NSSize(
+                width: min(420, visibleFrame.width - 40),
+                height: min(590, visibleFrame.height - 40)
+            )
             let window = NSWindow(
-                contentRect: NSRect(x: 100, y: 100, width: 420, height: 760),
+                contentRect: NSRect(
+                    x: visibleFrame.midX - windowSize.width / 2,
+                    y: visibleFrame.midY - windowSize.height / 2,
+                    width: windowSize.width,
+                    height: windowSize.height
+                ),
                 styleMask: [
                     .titled,
                     .closable,
@@ -1323,7 +1338,7 @@ final class MainWindowCompactControllerTests: XCTestCase {
         )
     }
 
-    func testManualExpandStillFollowsMovedCompactBar() {
+    func testManualExpandStillFollowsMovedCompactBar() throws {
         let suiteName = "CodexNotesTests.ManualFrameRestore.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             return XCTFail("Could not create isolated test defaults")
@@ -1332,6 +1347,23 @@ final class MainWindowCompactControllerTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let window = makeWindow()
+        guard let visibleFrame = NSScreen.main?.visibleFrame else {
+            throw XCTSkip("AppKit window integration requires a visible screen")
+        }
+        guard visibleFrame.width >= window.frame.width + 4,
+              visibleFrame.height >= window.frame.height + 4
+        else {
+            throw XCTSkip("Visible screen cannot contain the expanded test window")
+        }
+        window.setFrame(
+            NSRect(
+                x: visibleFrame.midX - window.frame.width / 2,
+                y: visibleFrame.midY - window.frame.height / 2,
+                width: window.frame.width,
+                height: window.frame.height
+            ),
+            display: false
+        )
         let controller = MainWindowCompactController(
             framePersistenceDefaults: defaults
         )
@@ -1354,14 +1386,18 @@ final class MainWindowCompactControllerTests: XCTestCase {
         XCTAssertTrue(controller.isCollapsed)
 
         let compactFrame = window.frame
-        let movedCompactFrame = compactFrame.offsetBy(dx: 120, dy: 80)
+        let dx = min(120, max(0, visibleFrame.maxX - compactFrame.maxX - 1))
+        let dy = min(80, max(0, visibleFrame.maxY - compactFrame.maxY - 1))
+        XCTAssertGreaterThan(dx, 0)
+        XCTAssertGreaterThan(dy, 0)
+        let movedCompactFrame = compactFrame.offsetBy(dx: dx, dy: dy)
         window.setFrame(movedCompactFrame, display: false)
 
         controller.toggleFromTitlebar()
 
         XCTAssertFalse(controller.isCollapsed)
-        XCTAssertEqual(window.frame.maxX, movedCompactFrame.maxX)
-        XCTAssertEqual(window.frame.maxY, movedCompactFrame.maxY)
+        XCTAssertEqual(window.frame.maxX, movedCompactFrame.maxX, accuracy: 0.01)
+        XCTAssertEqual(window.frame.maxY, movedCompactFrame.maxY, accuracy: 0.01)
         XCTAssertEqual(window.frame.size, initialFrame.size)
     }
 

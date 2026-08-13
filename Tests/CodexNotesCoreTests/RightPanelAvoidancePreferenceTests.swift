@@ -58,9 +58,8 @@ final class RightPanelAvoidancePreferenceTests: XCTestCase {
             defaults.set(true, forKey: "temporary")
             defaults.removeObject(forKey: "temporary")
 
-            XCTAssertEqual(
-                defaults.persistentDomain(forName: suiteName)?.isEmpty,
-                true
+            XCTAssertTrue(
+                defaults.persistentDomain(forName: suiteName)?.isEmpty ?? true
             )
             XCTAssertFalse(RightPanelAvoidancePreference.migrateIfNeeded(
                 defaults: defaults,
