@@ -79,6 +79,30 @@ final class MainWindowChromePolicyTests: XCTestCase {
         XCTAssertFalse(miniaturizeButton.isEnabled)
     }
 
+    func testCompactPolicyLeavesOnlyTitleAndAccessoryControlsVisible() throws {
+        let window = makeWindow()
+
+        MainWindowChromePolicy.apply(to: window, isCollapsed: true)
+
+        let closeButton = try XCTUnwrap(
+            window.standardWindowButton(.closeButton)
+        )
+        XCTAssertTrue(closeButton.isHidden)
+        XCTAssertFalse(closeButton.isEnabled)
+        XCTAssertTrue(
+            try XCTUnwrap(window.standardWindowButton(.miniaturizeButton))
+                .isHidden
+        )
+        XCTAssertTrue(
+            try XCTUnwrap(window.standardWindowButton(.zoomButton)).isHidden
+        )
+
+        MainWindowChromePolicy.apply(to: window, isCollapsed: false)
+
+        XCTAssertFalse(closeButton.isHidden)
+        XCTAssertTrue(closeButton.isEnabled)
+    }
+
     func testWindowCoordinatorRejectsZoom() {
         let window = makeWindow()
         let coordinator = WindowConfigurator.Coordinator()

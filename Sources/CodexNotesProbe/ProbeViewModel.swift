@@ -72,6 +72,16 @@ private enum SelectionMoveCoordinationError: LocalizedError {
     }
 }
 
+struct CodexRightPanelObservation: Equatable, Sendable {
+    let selectionStableKey: String?
+    let state: CodexRightPanelState
+
+    static let unknown = CodexRightPanelObservation(
+        selectionStableKey: nil,
+        state: .unknown
+    )
+}
+
 @MainActor
 final class ProbeViewModel: ObservableObject {
     typealias SelectionMoveNoticeScheduledAction = @MainActor () -> Void
@@ -97,6 +107,10 @@ final class ProbeViewModel: ObservableObject {
 
     @Published private(set) var state: State = .starting
     @Published private(set) var selection: CodexSelection?
+    @Published private(set) var rightPanelObservation =
+        CodexRightPanelObservation.unknown
+    private(set) var isRightPanelAvoidanceEnabled =
+        RightPanelAvoidancePreference.defaultValue
     @Published private(set) var metadata: CodexThreadMetadata?
     @Published private(set) var history: [ProbeHistoryItem] = []
     @Published private(set) var lastLatencyMilliseconds: Int?
@@ -130,6 +144,9 @@ final class ProbeViewModel: ObservableObject {
     let noteImageStore: NoteImageStore
 
     private let monitor = CodexLogMonitor()
+    private let rightPanelStateReader = CodexRightPanelStateReader()
+    private let accessibilityRightPanelReader =
+        CodexAccessibilityRightPanelReader()
     private let metadataProvider: any CodexThreadMetadataProviding
     private let globalProjectCandidateProvider: any CodexGlobalProjectCandidateProviding
     private let metadataClock = ContinuousClock()
@@ -152,6 +169,14 @@ final class ProbeViewModel: ObservableObject {
     private var confirmedNewTaskProject: CodexGlobalProjectCandidate?
     private var requiresReloadBeforeWrite = false
     private var shouldResumeMonitoringAfterSafetyReload = false
+    private var rightPanelDebouncer = CodexRightPanelDebouncer(
+        requiredConsecutive: 2
+    )
+    private var rightPanelAccessibilityPermission:
+        CodexAccessibilityPermissionState?
+    private var rightPanelAvoidanceGeneration: UInt = 0
+
+    private static let primaryRightPanelIdentity = "codex-primary-window"
 
     private struct PendingSelectionMove {
         let result: NoteSelectionMoveResult
@@ -238,6 +263,21 @@ final class ProbeViewModel: ObservableObject {
             guard let self else { return }
             await self.runMonitor()
         }
+    }
+
+    /// Controls the detector as well as the window response. Every preference
+    /// edge publishes unknown so a pre-disable sample cannot be treated as
+    /// current when the feature is enabled later.
+    func setRightPanelAvoidanceEnabled(_ isEnabled: Bool) {
+        guard isRightPanelAvoidanceEnabled != isEnabled else { return }
+        isRightPanelAvoidanceEnabled = isEnabled
+        rightPanelAvoidanceGeneration &+= 1
+        rightPanelDebouncer.reset()
+        rightPanelAccessibilityPermission = nil
+        // Every preference generation begins from unknown. This prevents a
+        // pre-disable `.open` sample from being replayed after off -> on, and
+        // makes the controller wait for a fresh detector result.
+        publishUnknownRightPanelObservation()
     }
 
     func retry() {
@@ -501,8 +541,10 @@ final class ProbeViewModel: ObservableObject {
         do {
             let initial = try await monitor.bootstrap()
             apply(initial, recordLatency: false)
+            await refreshRightPanelState()
         } catch {
             suspendEditing(message: error.localizedDescription)
+            publishUnknownRightPanelObservation()
         }
 
         while !Task.isCancelled {
@@ -510,11 +552,75 @@ final class ProbeViewModel: ObservableObject {
                 try await Task.sleep(for: .milliseconds(250))
                 let latest = try await monitor.poll()
                 apply(latest, recordLatency: true)
+                await refreshRightPanelState()
             } catch is CancellationError {
                 return
             } catch {
                 suspendEditing(message: error.localizedDescription)
+                publishUnknownRightPanelObservation()
             }
+        }
+    }
+
+    private func refreshRightPanelState() async {
+        guard isRightPanelAvoidanceEnabled else { return }
+        let avoidanceGeneration = rightPanelAvoidanceGeneration
+        let observedSelection = selection
+        let accessibilitySample = await accessibilityRightPanelReader.sample()
+        guard isRightPanelAvoidanceEnabled,
+              rightPanelAvoidanceGeneration == avoidanceGeneration,
+              selection?.stableKey == observedSelection?.stableKey else { return }
+
+        if rightPanelAccessibilityPermission != accessibilitySample.permission {
+            rightPanelAccessibilityPermission = accessibilitySample.permission
+            rightPanelDebouncer.reset()
+        }
+
+        let sampledState: CodexRightPanelState
+        switch accessibilitySample.permission {
+        case .authorized:
+            sampledState = accessibilitySample.state
+        case .denied:
+            guard let threadID = observedSelection?.threadID else {
+                publishUnknownRightPanelObservation()
+                return
+            }
+            sampledState = await rightPanelStateReader.state(for: threadID)
+            guard isRightPanelAvoidanceEnabled,
+                  rightPanelAvoidanceGeneration == avoidanceGeneration,
+                  selection?.stableKey == observedSelection?.stableKey else {
+                return
+            }
+        }
+
+        if sampledState == .unknown {
+            // Publishing unknown starts the controller's bounded fail-open
+            // timer. Reset the edge debouncer as well so the same definite
+            // state can be published again after Accessibility recovers.
+            rightPanelDebouncer.reset()
+            publishUnknownRightPanelObservation()
+            return
+        }
+
+        guard let observedState = rightPanelDebouncer.observe(sampledState) else {
+            return
+        }
+        let observation = CodexRightPanelObservation(
+            selectionStableKey: Self.primaryRightPanelIdentity,
+            state: observedState
+        )
+        if rightPanelObservation != observation {
+            rightPanelObservation = observation
+        }
+    }
+
+    private func publishUnknownRightPanelObservation() {
+        let observation = CodexRightPanelObservation(
+            selectionStableKey: Self.primaryRightPanelIdentity,
+            state: .unknown
+        )
+        if rightPanelObservation != observation {
+            rightPanelObservation = observation
         }
     }
 

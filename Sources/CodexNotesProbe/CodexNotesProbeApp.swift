@@ -58,6 +58,14 @@ struct CodexNotesProbeApp: App {
     @AppStorage(AppLanguagePreference.key)
     private var storedLanguagePreference = AppLanguagePreference.defaultValue.rawValue
 
+    init() {
+        if let bundleIdentifier = Bundle.main.bundleIdentifier {
+            RightPanelAvoidancePreference.migrateIfNeeded(
+                persistentDomainName: bundleIdentifier
+            )
+        }
+    }
+
     private var languagePreference: AppLanguagePreference {
         AppLanguagePreference.normalized(storedLanguagePreference)
     }
