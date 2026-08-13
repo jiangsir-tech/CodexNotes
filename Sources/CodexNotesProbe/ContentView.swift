@@ -2654,6 +2654,7 @@ struct WindowConfigurator: NSViewRepresentable {
         coordinator.invalidate()
     }
 
+    @MainActor
     private func applyTheme(to window: NSWindow) {
         if let appearanceName {
             if window.appearance?.name != appearanceName {
